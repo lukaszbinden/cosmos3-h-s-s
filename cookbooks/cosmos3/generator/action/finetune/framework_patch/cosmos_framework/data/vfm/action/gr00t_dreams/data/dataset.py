@@ -160,6 +160,18 @@ COSMOS_OPENH_STATS_POSTFIX_ENV = "COSMOS_OPENH_STATS_POSTFIX"
 
 
 COSMOS_OPENH_ALLOW_BARE_STATS_ENV = "COSMOS_OPENH_ALLOW_BARE_STATS"
+# Set by the stats GENERATOR (compute_openh_action_stats.py) so dataset
+# construction does NOT try to load a stats file that doesn't exist yet
+# (chicken-and-egg). In this mode _get_metadata builds DatasetMetadata with
+# EMPTY statistics — fine because the generator strips the normalizing
+# StateActionTransform and only needs modality shapes + the pre-norm
+# (delta/rot6d) transforms, which don't consult statistics. Training NEVER
+# sets this, so its strict stats-file requirement is unaffected.
+COSMOS_OPENH_STATS_COMPUTE_MODE_ENV = "COSMOS_OPENH_STATS_COMPUTE_MODE"
+
+
+def _is_stats_compute_mode() -> bool:
+    return os.environ.get(COSMOS_OPENH_STATS_COMPUTE_MODE_ENV, "").strip() in ("1", "true", "True")
 
 
 def _get_openh_stats_postfix() -> str:
@@ -642,6 +654,21 @@ class LeRobotSingleDataset(Dataset):
                 "channels": channels,
                 "fps": fps,
             }
+
+        # Stats-compute mode: skip loading any stats file (it's being generated)
+        # and return metadata with empty per-key statistics. Only used by
+        # compute_openh_action_stats.py, which strips the normalizing transform.
+        if _is_stats_compute_mode():
+            print(
+                f"{_get_rank_prefix()}NOTE: {COSMOS_OPENH_STATS_COMPUTE_MODE_ENV} set — "
+                f"skipping stats-file load for {self.dataset_path} (computing stats)."
+            )
+            empty_stats = {"state": {}, "action": {}}
+            return DatasetMetadata(
+                statistics=empty_stats,  # type: ignore
+                modalities=simplified_modality_meta,  # type: ignore
+                embodiment_tag=embodiment_tag,
+            )
 
         # 2. Dataset statistics
         # Priority order for stats file resolution:

@@ -77,6 +77,16 @@ from pathlib import Path
 import numpy as np
 
 
+# Tell the loader (LeRobotSingleDataset._get_metadata) NOT to load a stats file
+# during dataset construction — it's exactly the file we're generating here, so
+# requiring it would be circular (chicken-and-egg). In this mode the dataset is
+# built with empty statistics; we strip the normalizing transform anyway and
+# only use the pre-norm (delta/rot6d) transforms, which don't need statistics.
+# Set BEFORE any cosmos_framework import/use. (Training never sets this, so its
+# strict stats-file requirement is unaffected.)
+os.environ.setdefault("COSMOS_OPENH_STATS_COMPUTE_MODE", "1")
+
+
 # Default action-representation tag recorded in provenance / used in the dim
 # component of the postfix convention. This cookbook is 44D.
 ACTION_REP = "44D"
