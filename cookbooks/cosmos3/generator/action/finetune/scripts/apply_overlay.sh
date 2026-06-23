@@ -2,33 +2,37 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: OpenMDW-1.1
 #
-# Apply this cookbook's framework_patch/ overlay onto an installed
-# cosmos_framework: rsync the 44D Open-H surgical data stack + experiment
-# config, register the experiment in config.py, and install the extra Python
-# deps the data stack needs.
+# Stamp this cookbook's framework_patch/ overlay onto the INSTALLED
+# cosmos_framework package — using a purely LOCAL file copy (cp, no rsync, no
+# network).
 #
-# Use this whenever you change anything under framework_patch/ (e.g. the
-# registry / dataset.py), or to fix a fresh venv that errors with
-#   ModuleNotFoundError: No module named 'cosmos_framework.data.vfm.action.gr00t_dreams'
+# Why: cosmos_framework is an installed dependency (NOT source you edit/commit
+# in git). Your overlay edits live in git under framework_patch/; this script
+# copies them onto the installed package at job start so the running env picks
+# them up. Re-run it after every git change to framework_patch/ (and at the top
+# of each job), since reinstalling/syncing the dependency reverts the package to
+# its pristine state.
 #
-# The target cosmos_framework install is resolved in this order:
+# It (1) copies framework_patch/cosmos_framework/* over the installed package,
+# (2) registers the action_fdm_open_h_sft_nano experiment in config.py
+# (idempotent), (3) installs the extra Python deps the data stack needs, and
+# (4) verifies the overlaid modules import.
+#
+# Target cosmos_framework install is resolved in this order:
 #   1. --framework-dir <DIR>           (DIR contains the 'cosmos_framework/' pkg)
 #   2. $COSMOS3_FRAMEWORK_DIR          (same meaning)
 #   3. auto-detect from the ACTIVE python (import cosmos_framework)
 #   4. $WORKSPACE/packages/cosmos3     (the setup_workspace.sh checkout)
 #
 # Usage:
-#   # overlay onto whatever cosmos_framework your current venv imports:
+#   # stamp whatever cosmos_framework your current venv imports:
 #   bash scripts/apply_overlay.sh
 #
-#   # overlay onto an explicit checkout:
-#   bash scripts/apply_overlay.sh --framework-dir /path/to/cosmos-framework
+#   # target an explicit install root (parent of cosmos_framework/):
+#   bash scripts/apply_overlay.sh --framework-dir /path/to/site-packages
 #
-#   # skip the extra-deps pip install (e.g. offline / already installed):
-#   bash scripts/apply_overlay.sh --no-deps
-#
-#   # dry-run (show what rsync would copy, change nothing):
-#   bash scripts/apply_overlay.sh --dry-run
+#   bash scripts/apply_overlay.sh --no-deps     # skip the extra-deps install
+#   bash scripts/apply_overlay.sh --dry-run     # list files that would be copied
 
 set -euo pipefail
 
@@ -48,7 +52,7 @@ while [[ $# -gt 0 ]]; do
         --framework-dir=*) FRAMEWORK_DIR="${1#*=}"; shift ;;
         --no-deps) INSTALL_DEPS=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        -h|--help) sed -n '2,37p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -59,8 +63,8 @@ done
 }
 
 # --- resolve the target framework package root -----------------------------
-# We want the directory that CONTAINS the 'cosmos_framework' package dir, so
-# that rsync of framework_patch/cosmos_framework/... lands on <root>/cosmos_framework/...
+# We want the directory that CONTAINS the 'cosmos_framework' package dir, so a
+# copy of framework_patch/cosmos_framework/... lands on <root>/cosmos_framework/...
 resolve_from_python() {
     python - <<'PY' 2>/dev/null || true
 import importlib.util, os
@@ -95,31 +99,48 @@ fi
     exit 1
 }
 
+# Guard: don't copy a tree onto itself (e.g. if someone points --framework-dir
+# at the cookbook's own framework_patch).
+if [[ "$(cd "$PATCH_DIR" && pwd -P)" == "$(cd "$FRAMEWORK_DIR" && pwd -P)" ]]; then
+    echo "ERROR: source and target are the same directory ($FRAMEWORK_DIR)." >&2
+    exit 1
+fi
+
 CONFIG_PY="$FRAMEWORK_DIR/cosmos_framework/configs/base/config.py"
 [[ -f "$CONFIG_PY" ]] || {
-    echo "ERROR: expected $CONFIG_PY not found (is this a cosmos_framework checkout?)" >&2
+    echo "ERROR: expected $CONFIG_PY not found (is this a cosmos_framework install?)" >&2
     exit 1
 }
 
 echo "============================================================"
-echo "Overlay source : $PATCH_DIR/"
-echo "Target install : $FRAMEWORK_DIR/"
+echo "Overlay source : $PATCH_DIR/  (git-managed)"
+echo "Target install : $FRAMEWORK_DIR/  (installed dependency)"
 echo "Extra deps     : $([[ $INSTALL_DEPS -eq 1 ]] && echo "$COSMOS3_EXTRA_DEPS" || echo '(skipped)')"
-echo "Mode           : $([[ $DRY_RUN -eq 1 ]] && echo 'DRY-RUN' || echo 'apply')"
+echo "Mode           : $([[ $DRY_RUN -eq 1 ]] && echo 'DRY-RUN' || echo 'apply (local cp)')"
 echo "============================================================"
 
-# --- rsync the overlay -----------------------------------------------------
-RSYNC_FLAGS=(-a -v)
-[[ $DRY_RUN -eq 1 ]] && RSYNC_FLAGS+=(--dry-run)
-# Never copy compiled caches.
-RSYNC_FLAGS+=(--exclude='__pycache__' --exclude='*.pyc')
-rsync "${RSYNC_FLAGS[@]}" "$PATCH_DIR/" "$FRAMEWORK_DIR/"
+# --- copy the overlay (local, no rsync/network) ----------------------------
+# Enumerate regular files under the overlay (excluding pycache) and cp each to
+# the mirrored path under the target, creating parent dirs as needed.
+copied=0
+while IFS= read -r -d '' src; do
+    rel="${src#"$PATCH_DIR"/}"          # e.g. cosmos_framework/data/.../dataset.py
+    dst="$FRAMEWORK_DIR/$rel"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  would copy  $rel"
+    else
+        mkdir -p "$(dirname "$dst")"
+        cp -f "$src" "$dst"
+    fi
+    copied=$((copied + 1))
+done < <(find "$PATCH_DIR" -type f -not -path '*/__pycache__/*' -not -name '*.pyc' -print0)
 
 if [[ $DRY_RUN -eq 1 ]]; then
     echo ""
-    echo "[dry-run] No changes made (rsync, config.py registration, and deps skipped)."
+    echo "[dry-run] $copied file(s) would be copied; no changes made."
     exit 0
 fi
+echo "[ok] copied $copied overlay file(s) into $FRAMEWORK_DIR"
 
 # --- register the experiment in config.py (idempotent) ---------------------
 python - "$CONFIG_PY" <<'PY'
@@ -177,6 +198,7 @@ print("[verify] overlay import check passed.")
 PY
 
 echo ""
-echo "Overlay applied to $FRAMEWORK_DIR"
-echo "Next: run the audit / stats, e.g."
+echo "Overlay stamped onto $FRAMEWORK_DIR"
+echo "Re-run this after any framework_patch/ change (and at job start, since"
+echo "reinstalling the dependency reverts it). Next: audit / stats, e.g."
 echo "  python $COOKBOOK_DIR/scripts/audit_openh_action_schemas.py --root \"\$OPENH_SURGICAL_ROOT\""

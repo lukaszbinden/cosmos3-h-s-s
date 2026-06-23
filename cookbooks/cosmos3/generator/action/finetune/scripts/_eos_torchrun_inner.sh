@@ -42,6 +42,27 @@ source /workspace/.venv/bin/activate
 # library-path leakage shadowing them.
 export LD_LIBRARY_PATH=
 
+# --- Stamp the cookbook overlay onto the installed cosmos_framework ---------
+# cosmos_framework (mounted at /workspace) is an installed dependency in its
+# pristine state; apply_overlay.sh copies this cookbook's git-managed
+# framework_patch/ onto it so the run uses our 44D Open-H stack. Done here, at
+# job start, on every node (each node has its own container). Idempotent.
+# Override the script location / target via COSMOS3_APPLY_OVERLAY /
+# COSMOS3_FRAMEWORK_DIR if your layout differs.
+_INNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_APPLY_OVERLAY="${COSMOS3_APPLY_OVERLAY:-$_INNER_DIR/apply_overlay.sh}"
+if [[ -f "$_APPLY_OVERLAY" ]]; then
+    echo "[overlay] stamping framework_patch/ onto ${COSMOS3_FRAMEWORK_DIR:-/workspace}"
+    # --no-deps: the image venv already has the training deps; extra data-stack
+    # deps (albumentations/imageio/dm-tree) should be baked into the image or
+    # installed once out-of-band. Drop --no-deps if you want them installed here.
+    bash "$_APPLY_OVERLAY" --framework-dir "${COSMOS3_FRAMEWORK_DIR:-/workspace}" --no-deps
+else
+    echo "[overlay] WARNING: apply_overlay.sh not found at $_APPLY_OVERLAY — "
+    echo "          assuming cosmos_framework is already overlaid. Set "
+    echo "          COSMOS3_APPLY_OVERLAY to the script path to stamp at job start."
+fi
+
 python - <<'PY'
 import torch
 print("torch", torch.__version__, "cuda_available", torch.cuda.is_available(), "device_count", torch.cuda.device_count())

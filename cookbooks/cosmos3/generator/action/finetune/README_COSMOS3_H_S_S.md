@@ -241,8 +241,8 @@ finetune/
     action_fdm_open_h_sft_nano.toml     # run-level scalars
   scripts/
     setup_workspace.sh                  # clone + uv sync + overlay + register + stage
-    apply_overlay.sh                    # (re)apply framework_patch/ onto an installed cosmos_framework
-    _eos_torchrun_inner.sh              # in-container torchrun wrapper
+    apply_overlay.sh                    # local cp of framework_patch/ onto the installed cosmos_framework (run at job start)
+    _eos_torchrun_inner.sh              # in-container torchrun wrapper (stamps the overlay, then torchrun)
     slurm_smoke.sbatch                  # 1-node, 10-iter end-to-end smoke
     slurm_train.sbatch                  # 8-node resumable main train
     resubmit_until_done.sh              # resubmit until TARGET_ITER
@@ -273,25 +273,36 @@ VAE.
 
 ### Apply / re-apply the overlay (`apply_overlay.sh`)
 
-The overlay step is factored into `scripts/apply_overlay.sh` so you can run it
-on its own — use it whenever you edit anything under `framework_patch/` (e.g.
-`groot_configs.py` or `dataset.py`), or to fix a venv that errors with
-`ModuleNotFoundError: ... cosmos_framework.data.vfm.action.gr00t_dreams`. It
-rsyncs `framework_patch/` onto the target install, registers the experiment in
-`config.py` (idempotent), installs the extra deps (`albumentations`, `imageio`,
-`dm-tree`), and verifies the overlaid modules import.
+`cosmos_framework` is an **installed dependency**, not source you edit/commit.
+Your overlay edits live in git under `framework_patch/`; `scripts/apply_overlay.sh`
+**stamps them onto the installed package with a local file copy** (`cp`, no
+rsync, no network). Run it:
+
+- **at the start of every job/session**, because reinstalling or re-syncing the
+  dependency reverts the package to pristine; and
+- **after any git change to `framework_patch/`** (e.g. `groot_configs.py`,
+  `dataset.py`).
+
+It also fixes a venv that errors with
+`ModuleNotFoundError: ... cosmos_framework.data.vfm.action.gr00t_dreams`. The
+script: copies `framework_patch/cosmos_framework/*` over the installed package,
+registers the `action_fdm_open_h_sft_nano` experiment in `config.py`
+(idempotent), installs the extra deps (`albumentations`, `imageio`, `dm-tree`),
+and verifies the overlaid modules import.
 
 ```bash
 # activate the venv that has cosmos_framework, then:
 bash scripts/apply_overlay.sh                              # auto-detects the install
-bash scripts/apply_overlay.sh --framework-dir /path/to/cosmos-framework   # explicit
-bash scripts/apply_overlay.sh --dry-run                   # show what would copy
+bash scripts/apply_overlay.sh --framework-dir /path/to/site-packages   # explicit
+bash scripts/apply_overlay.sh --dry-run                   # list files that would copy
 bash scripts/apply_overlay.sh --no-deps                   # skip pip install
 ```
 
 Target resolution order: `--framework-dir` → `$COSMOS3_FRAMEWORK_DIR` →
 auto-detect from the active `python` (`import cosmos_framework`) →
-`$WORKSPACE/packages/cosmos3`.
+`$WORKSPACE/packages/cosmos3`. The copy is purely local; you manage the overlay
+*source* via git in `framework_patch/` and never edit the installed package by
+hand.
 
 ## Pre-flight (must run on the cluster)
 
