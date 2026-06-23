@@ -129,7 +129,7 @@ write outputs under `outputs/cosmos3_action_vllm/`:
 To post-train Cosmos3-Nano into a surgical world model on the
 [Open-H](https://huggingface.co/datasets/nvidia/Open-H) multi-embodiment
 surgical benchmark (unified 44D action space, forward dynamics), see the
-[Open-H surgical fine-tuning cookbook](./finetune/README.md). It ships a
+[Open-H surgical fine-tuning cookbook](./finetune/README_COSMOS3_H_S_S.md). It ships a
 `framework_patch/` overlay (the 44D action registry, per-embodiment transforms,
 multi-embodiment dataset, and a registered `action_fdm_open_h_sft_nano`
 experiment) plus setup, stats/audit, and Slurm launch scripts.

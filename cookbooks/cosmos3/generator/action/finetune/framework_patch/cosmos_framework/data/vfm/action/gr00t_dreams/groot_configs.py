@@ -114,10 +114,10 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "jhu_dvrk_mono": {
         "timestep_interval": 3,
-        # On-disk (open-h-embodiment): observation.images.endoscope.left
-        # (IMERSE / LCSR ARCADE are dVRK-Si stereo; we read the left endoscope).
-        # AUDIT: confirm the modality key + psm1/psm2 pose/gripper keys per dataset.
-        "video_keys": ["video.endoscope.left"],
+        # modality.json video subkey "endoscope_left" (folder
+        # observation.images.endoscope.left); IMERSE / LCSR ARCADE dVRK-Si stereo,
+        # left endoscope. Verified against meta/modality.json.
+        "video_keys": ["video.endoscope_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm1_gripper",
@@ -184,8 +184,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "dvrk_ucb": {
         "timestep_interval": 3,
-        # On-disk: observation.images.left (UCB debridement; cams 'left'/'right').
-        "video_keys": ["video.left"],
+        # modality.json video subkey "camera_left" (folder observation.images.left); UCB.
+        "video_keys": ["video.camera_left"],
         "state_keys": [
             # Joint-angle + gripper state (normalized & concatenated as model input)
             "state.psm1_joints",
@@ -262,8 +262,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "dvrk_ucsd": {
         "timestep_interval": 3,
-        # On-disk: observation.images.left (UCSD; cams 'left'/'right').
-        "video_keys": ["video.left"],
+        # modality.json video subkey "camera_left" (folder observation.images.left); UCSD.
+        "video_keys": ["video.camera_left"],
         "state_keys": [
             "state.psm_retraction_pose",
             "state.psm_retraction_gripper",
@@ -323,8 +323,9 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "dvrk_obuda": {
         "timestep_interval": 5,
-        # On-disk: observation.images.endoscope.left (Obuda dVRK stereo -> left).
-        "video_keys": ["video.endoscope.left"],
+        # modality.json video subkey "endoscope_left" (folder
+        # observation.images.endoscope.left); Obuda dVRK stereo -> left.
+        "video_keys": ["video.endoscope_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm1_gripper",
@@ -404,8 +405,9 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "dvrk_stanford_real": {
         "timestep_interval": 3,
-        # On-disk: observation.images.camera_left (Stanford real dVRK).
-        "video_keys": ["video.camera_left"],
+        # modality.json video subkey "endoscope_left" (folder
+        # observation.images.camera_left); Stanford real dVRK stereo -> left.
+        "video_keys": ["video.endoscope_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm1_gripper",
@@ -486,8 +488,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "jhu_lscr_miracle": {
         "timestep_interval": 1,
-        # On-disk: observation.images.left (LCSR MIRACLE; cams 'left'/'right').
-        "video_keys": ["video.left"],
+        # modality.json video subkey "camera_left" (folder observation.images.left); LCSR MIRACLE.
+        "video_keys": ["video.camera_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm1_gripper",
@@ -520,8 +522,9 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "jhu_lscr_smarts": {
         "timestep_interval": 1,
-        # On-disk: observation.images.left (LCSR SMARTS; cams 'left'/'right').
-        "video_keys": ["video.left"],
+        # modality.json video subkey "endoscope_left" (folder
+        # observation.images.endoscope_left); LCSR SMARTS stereo + camera_side_view.
+        "video_keys": ["video.endoscope_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm1_gripper",
@@ -555,9 +558,11 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     "tud_tundra": {
         "timestep_interval": 3,
         "video_keys": ["video.laparoscope_left"],
+        # modality.json (public open-h-embodiment) exposes state subkeys
+        # {joint_position, eef_pose} — there is NO state.gripper (the gripper
+        # is action-only). Keep state.eef_pose as the pose-delta reference.
         "state_keys": [
             "state.eef_pose",
-            "state.gripper",
         ],
         "action_keys": [
             "action.eef_pose",
@@ -579,8 +584,9 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     "turin_mitic_ex_vivo": {
         "timestep_interval": 3,
-        # On-disk: observation.images.endoscope.left (Turin MITIC stereo -> left).
-        "video_keys": ["video.endoscope.left"],
+        # modality.json video subkey "endoscope_left" (folder
+        # observation.images.endoscope.left); Turin MITIC stereo -> left.
+        "video_keys": ["video.endoscope_left"],
         "state_keys": [
             "state.psm1_pose",
             "state.psm2_pose",
@@ -601,6 +607,13 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     # JHU IMERSE STAR-IL (single KUKA arm, pose only, no gripper)
     # -----------------------------------------------------------------
+    # DORMANT: NOT in OPEN_H_DATASET_SPECS. The public open-h-embodiment
+    # ``jhu/imerse/star_il/star_il`` leaf has NO meta/modality.json (the gr00t
+    # loader requires one), so it was dropped after the modality audit. This
+    # entry + the EmbodimentTag are retained so the dataset can be re-added
+    # quickly if/when its modality.json is published. The keys below are
+    # ASSUMPTIONS and must be validated against the real modality.json first.
+    #
     # Added for the cosmos3-h-s-s Open-H mixture (union with the sean repo
     # surgical dataset list). The sean repo's audited schema
     # (``surgical_action_schemas._star_il_layout``) models STAR-IL as a
@@ -640,6 +653,13 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     # -----------------------------------------------------------------
     # Virtual Incision MIRA (delta-command pose + gripper, single arm)
     # -----------------------------------------------------------------
+    # DORMANT: NOT in OPEN_H_DATASET_SPECS. The public
+    # ``virtual_incision/150_episodes_mira_needle_lift`` leaf has NO
+    # meta/modality.json and a bespoke column layout (action, action_gripper,
+    # action_executed_cartesian, ...), so it was dropped after the modality
+    # audit. Retained (entry + EmbodimentTag) for re-add once a modality.json
+    # + verified schema exist. The keys below are ASSUMPTIONS.
+    #
     # Added for the cosmos3-h-s-s Open-H mixture (union with the sean repo
     # surgical dataset list). The sean repo treats MIRA as a bespoke
     # ``mira_delta_single`` schema (``surgical_action_schemas.mira_delta_layout``):
@@ -791,44 +811,40 @@ OPEN_H_DATASET_SPECS: list[dict] = [
     {
         "path": f"{_JHU_IMERSE}/srth_porcine_chole",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.825,
+        "mix_ratio": 0.867,
     },  # 1,878,393 fr
     {
         "path": f"{_JHU_IMERSE}/wound_closure/point_labeled/fausto_0_1_jesse_0_1_2_labeled",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.827,
+        "mix_ratio": 0.869,
     },  # 1,883,971 fr
     {
         "path": f"{_JHU_IMERSE}/suturebot",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.227,
+        "mix_ratio": 0.238,
     },  # 516,334 fr
     {
         "path": f"{_JHU_IMERSE}/nephfat/nephfat",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.217,
+        "mix_ratio": 0.228,
     },  # 494,525 fr
     {
         "path": f"{_JHU_IMERSE}/srt_needle_pickup_handover",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.026,
+        "mix_ratio": 0.027,
     },  # 58,305 fr
     {
         "path": f"{_JHU_IMERSE}/cao_cautery_combined",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.023,
+        "mix_ratio": 0.024,
     },  # 52,748 fr
     {
         "path": f"{_JHU_IMERSE}/srt_tissue_lift",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.012,
+        "mix_ratio": 0.013,
     },  # 27,487 fr
     # ===== JHU LCSR ARCADE (dVRK-Si stereo; left endoscope) =====
-    {
-        "path": f"{_JHU_LCSR}/arcade/cholecystectomy",
-        "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.080,
-    },  # 181,021 fr
+    # NOTE: arcade/cholecystectomy DROPPED (no meta/modality.json on disk).
     {
         "path": f"{_JHU_LCSR}/arcade/cautery",
         "embodiment": EmbodimentTag.JHU_DVRK_MONO,
@@ -844,12 +860,12 @@ OPEN_H_DATASET_SPECS: list[dict] = [
     {
         "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P1",
         "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
-        "mix_ratio": 0.023,
+        "mix_ratio": 0.024,
     },  # 53,114 fr
     {
         "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P2",
         "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
-        "mix_ratio": 0.014,
+        "mix_ratio": 0.015,
     },  # 32,426 fr
     {
         "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P3",
@@ -858,135 +874,127 @@ OPEN_H_DATASET_SPECS: list[dict] = [
     },  # 17,485 fr
     # NOTE: smarts/SurgSync-multitask/{P1..P4} also exist on disk; add once
     # their action schema is audited (Table S1 lists them under SMARTS).
-    # ===== JHU IMERSE STAR-IL (single KUKA arm, no gripper) =====
-    {
-        "path": f"{_JHU_IMERSE}/star_il/star_il",
-        "embodiment": EmbodimentTag.JHU_IMERSE,
-        "mix_ratio": 0.095,
-    },  # 216,140 fr
+    # NOTE: JHU IMERSE STAR-IL (jhu/imerse/star_il/star_il) DROPPED
+    # (no meta/modality.json on disk); jhu_imerse registry entry kept dormant.
     # ===== Obuda dVRK (stereo; left endoscope) — all task leaves =====
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/frs_dome_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.062,
+        "mix_ratio": 0.065,
     },  # 141,078 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/pork_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.073,
+        "mix_ratio": 0.077,
     },  # 165,486 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/pegtransfer_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.059,
+        "mix_ratio": 0.062,
     },  # 134,832 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/rollercoaster_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.057,
+        "mix_ratio": 0.06,
     },  # 130,268 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/needlethreading_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.045,
+        "mix_ratio": 0.047,
     },  # 103,067 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/needlethreading_2",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.045,
+        "mix_ratio": 0.047,
     },  # 102,221 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/seaspike_3",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.045,
+        "mix_ratio": 0.047,
     },  # 102,948 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/seaspike_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.039,
+        "mix_ratio": 0.041,
     },  # 89,269 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/pegtransfer_2",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.034,
+        "mix_ratio": 0.036,
     },  # 78,140 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/seaspike_2",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.030,
+        "mix_ratio": 0.032,
     },  # 67,658 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/obuda/skinphantom_1",
         "embodiment": EmbodimentTag.DVRK_OBUDA,
-        "mix_ratio": 0.018,
+        "mix_ratio": 0.019,
     },  # 41,979 fr
     # ===== Stanford real dVRK (Euler RPY; cam keys 'camera_left'/'camera_right') =====
     {
         "path": f"{_STANFORD_BASE}/needle_transfer",
         "embodiment": EmbodimentTag.DVRK_STANFORD_REAL,
-        "mix_ratio": 0.138,
+        "mix_ratio": 0.145,
     },  # 313,882 fr
     {
         "path": f"{_STANFORD_BASE}/tissue_retraction",
         "embodiment": EmbodimentTag.DVRK_STANFORD_REAL,
-        "mix_ratio": 0.128,
+        "mix_ratio": 0.134,
     },  # 291,826 fr
     {
         "path": f"{_STANFORD_BASE}/peg_transfer",
         "embodiment": EmbodimentTag.DVRK_STANFORD_REAL,
-        "mix_ratio": 0.118,
+        "mix_ratio": 0.124,
     },  # 268,729 fr
     # ===== Turin MITIC (stereo; left endoscope; no grippers) — all leaves =====
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/turin/mitic_lerobot_ex_vivo",
         "embodiment": EmbodimentTag.TURIN_MITIC_EX_VIVO,
-        "mix_ratio": 0.171,
+        "mix_ratio": 0.18,
     },  # 388,690 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/turin/mitic_lerobot_plastic_pad_3dmed",
         "embodiment": EmbodimentTag.TURIN_MITIC_EX_VIVO,
-        "mix_ratio": 0.107,
+        "mix_ratio": 0.112,
     },  # 243,229 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/turin/mitic_lerobot_plastic_tube",
         "embodiment": EmbodimentTag.TURIN_MITIC_EX_VIVO,
-        "mix_ratio": 0.095,
+        "mix_ratio": 0.1,
     },  # 216,070 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/turin/mitic_lerobot_plastic_pad",
         "embodiment": EmbodimentTag.TURIN_MITIC_EX_VIVO,
-        "mix_ratio": 0.066,
+        "mix_ratio": 0.069,
     },  # 149,846 fr
     # ===== UCSD (stereo; cam keys 'left'/'right') =====
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/ucsd/surgical_learning_dataset",
         "embodiment": EmbodimentTag.DVRK_UCSD,
-        "mix_ratio": 0.127,
+        "mix_ratio": 0.133,
     },  # 288,604 fr
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/ucsd/surgical_learning_dataset2",
         "embodiment": EmbodimentTag.DVRK_UCSD,
-        "mix_ratio": 0.012,
+        "mix_ratio": 0.013,
     },  # 26,313 fr
     # ===== UC Berkeley debridement (stereo; cam keys 'left'/'right') =====
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/ucberkeley/debridement_lerobot",
         "embodiment": EmbodimentTag.DVRK_UCB,
-        "mix_ratio": 0.097,
+        "mix_ratio": 0.102,
     },  # 221,950 fr
     # ===== TUD TUNDRA grasping_retraction (single-arm UR5e; laparoscope_left) =====
     # endoscope_guidance leaf excluded (4D delta-tip schema).
     {
         "path": f"{_OPENH_SURGICAL_ROOT}/tud/260131_tundra_dataset/grasping_retraction",
         "embodiment": EmbodimentTag.TUD_TUNDRA,
-        "mix_ratio": 0.037,
+        "mix_ratio": 0.039,
     },  # 83,159 fr (35,406 + 47,753)
-    # ===== Virtual Incision MIRA (delta-command pose + gripper; 'endoscope') =====
-    {
-        "path": f"{_OPENH_SURGICAL_ROOT}/virtual_incision/150_episodes_mira_needle_lift",
-        "embodiment": EmbodimentTag.VIRTUAL_INCISION_MIRA,
-        "mix_ratio": 0.018,
-    },  # 39,960 fr
+    # NOTE: Virtual Incision MIRA (virtual_incision/150_episodes_mira_needle_lift)
+    # DROPPED (no meta/modality.json; bespoke columns); registry entry dormant.
 ]
 # Derived: the set of all Open-H embodiment tag strings.
 # Used by dataset.py to enforce stats_cosmos.json requirement.
