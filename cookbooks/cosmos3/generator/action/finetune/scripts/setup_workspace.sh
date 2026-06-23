@@ -30,6 +30,11 @@ WORKSPACE="${WORKSPACE:-$HOME/cosmos3_openh_surgical_fd}"
 # currently exposes: cmr_surgical, hamlyn, jhu, obuda, stanford, tud, turin,
 # ucberkeley, ucsd, virtual_incision, ...). Used to re-root the (B) specs.
 OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-/lustre/fsw/healthcareeng_holoscan/datasets/open-h-embodiment/Surgical}"
+# Experiment-specific stats-filename postfix. Stats live in the shared dataset
+# meta/ dirs, so set a unique postfix to avoid colliding with other experiments'
+# stats_cosmos*.json (e.g. a colleague's 54D run). The training loader and
+# compute_openh_action_stats.py both read this var. Empty = legacy bare names.
+COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-c3hss-v1}"
 COSMOS3_UV_GROUP="${COSMOS3_UV_GROUP:-cu130-train}"
 COSMOS3_REPO_URL="${COSMOS3_REPO_URL:-https://github.com/NVIDIA/cosmos-framework.git}"
 BASE_CHECKPOINT_PATH="${BASE_CHECKPOINT_PATH:-$WORKSPACE/checkpoints/Cosmos3-Nano}"
@@ -61,41 +66,17 @@ cd "$FRAMEWORK_DIR"
 export GIT_LFS_SKIP_SMUDGE=1
 uv sync --all-extras --group="$COSMOS3_UV_GROUP"
 
-# Extra deps for the ported surgical data stack.
-if [[ -n "$COSMOS3_EXTRA_DEPS" ]]; then
-    uv pip install $COSMOS3_EXTRA_DEPS
-fi
-
-# --- Overlay the framework patch -------------------------------------------
-# Copies the 44D Open-H surgical data stack + experiment config into the
-# framework checkout (cosmos_framework/data/vfm/action/{gr00t_dreams,
-# open_h_dataset.py,domain_utils.py,datasets/openh_sft_dataset.py} and
-# configs/.../action/posttrain_config/action_fdm_open_h_sft_nano.py).
-rsync -a "$COOKBOOK_DIR/framework_patch/" "$FRAMEWORK_DIR/"
-
-# --- Register the experiment in config.py ----------------------------------
-"$FRAMEWORK_DIR/.venv/bin/python" - <<'PY'
-from pathlib import Path
-
-path = Path("cosmos_framework/configs/base/config.py")
-text = path.read_text()
-line = (
-    "    import cosmos_framework.configs.base.experiment.action."
-    "posttrain_config.action_fdm_open_h_sft_nano  # noqa: F401\n"
-)
-needle = (
-    "    import cosmos_framework.configs.base.experiment.action."
-    "posttrain_config.action_policy_droid_nano  # noqa: F401\n"
-)
-if line not in text:
-    if needle not in text:
-        raise SystemExit(f"Could not find experiment import insertion point in {path}")
-    text = text.replace(needle, needle + line)
-    path.write_text(text)
-    print(f"Registered action_fdm_open_h_sft_nano in {path}")
-else:
-    print(f"action_fdm_open_h_sft_nano already registered in {path}")
-PY
+# --- Overlay the framework patch + register experiment + extra deps --------
+# Delegated to apply_overlay.sh (single source of truth for the overlay step;
+# re-run it standalone any time framework_patch/ changes). It rsyncs the 44D
+# Open-H surgical data stack + experiment config into the checkout, registers
+# the experiment in config.py, and installs the extra Python deps. Activate the
+# checkout venv first so its internal `python` calls (import-verification) and
+# `uv pip install` target this environment.
+# shellcheck disable=SC1091
+source "$FRAMEWORK_DIR/.venv/bin/activate"
+COSMOS3_EXTRA_DEPS="$COSMOS3_EXTRA_DEPS" \
+    bash "$SCRIPT_DIR/apply_overlay.sh" --framework-dir "$FRAMEWORK_DIR"
 
 # --- Stage the TOML --------------------------------------------------------
 cp "$COOKBOOK_DIR/toml/sft_config/action_fdm_open_h_sft_nano.toml" \
@@ -117,6 +98,9 @@ export WAN_VAE_PATH="$WAN_VAE_PATH"
 export UV_CACHE_DIR="$UV_CACHE_DIR"
 export UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR"
 export IMAGINAIRE_OUTPUT_ROOT="$WORKSPACE/outputs/train"
+# Experiment stats postfix — MUST match what compute_openh_action_stats.py was
+# run with (the loader reads stats_cosmos-<postfix>.json / -44D-<postfix>.json).
+export COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX"
 # The specs already use absolute open-h-embodiment/Surgical paths, so a default
 # run needs neither var. Set DATASET_PATH only to re-root ALL specs elsewhere
 # (rebases by the full relative path under the surgical root).
@@ -135,10 +119,12 @@ echo "  2. Audit the newly added (B) Open-H leaves and FIX any schema"
 echo "     mismatches in groot_configs.py:"
 echo "       python $COOKBOOK_DIR/scripts/audit_openh_action_schemas.py \\"
 echo "           --root \$OPENH_SURGICAL_ROOT"
-echo "  3. Compute per-embodiment action stats (writes meta/stats_cosmos.json"
-echo "     and CMR meta/stats_cosmos-44D.json) and recompute (B) mix ratios:"
+echo "  3. Compute per-embodiment action stats (writes postfixed"
+echo "     meta/stats_cosmos-\$COSMOS_OPENH_STATS_POSTFIX.json and CMR"
+echo "     meta/stats_cosmos-44D-\$COSMOS_OPENH_STATS_POSTFIX.json):"
+echo "       COSMOS_OPENH_STATS_POSTFIX=$COSMOS_OPENH_STATS_POSTFIX \\"
 echo "       python $COOKBOOK_DIR/scripts/compute_openh_action_stats.py \\"
-echo "           --root \$OPENH_SURGICAL_ROOT"
+echo "           --root \$OPENH_SURGICAL_ROOT --experiment-id <id>"
 echo "  4. Build the CMR filtered-episode caches:"
 echo "       python $COOKBOOK_DIR/scripts/compute_cmr_filtered_episodes_cache.py"
 echo "  5. Launch: sbatch $COOKBOOK_DIR/scripts/slurm_train.sbatch"

@@ -43,6 +43,7 @@ datasets that are unavailable or incompatible in the public release — **Hamlyn
 - [Layout](#layout)
 - [Setup](#setup)
 - [Pre-flight (must run on the cluster)](#pre-flight-must-run-on-the-cluster)
+- [Stats file naming & collision avoidance](#stats-file-naming--collision-avoidance)
 - [Launch](#launch)
 - [Licensing / provenance](#licensing--provenance)
 - [Decision log and handoff notes](#decision-log-and-handoff-notes)
@@ -240,6 +241,7 @@ finetune/
     action_fdm_open_h_sft_nano.toml     # run-level scalars
   scripts/
     setup_workspace.sh                  # clone + uv sync + overlay + register + stage
+    apply_overlay.sh                    # (re)apply framework_patch/ onto an installed cosmos_framework
     _eos_torchrun_inner.sh              # in-container torchrun wrapper
     slurm_smoke.sbatch                  # 1-node, 10-iter end-to-end smoke
     slurm_train.sbatch                  # 8-node resumable main train
@@ -265,12 +267,31 @@ bash scripts/setup_workspace.sh
 
 `setup_workspace.sh` clones Cosmos Framework into `$WORKSPACE/packages/cosmos3`,
 installs the CUDA 13 training environment (`cu130-train`; use
-`COSMOS3_UV_GROUP=cu128-train` + a PyTorch container for older drivers),
-installs the extra deps the ported data stack needs (`albumentations`,
-`imageio`, `dm-tree`), rsyncs `framework_patch/` over the checkout, registers
-the `action_fdm_open_h_sft_nano` experiment in
-`cosmos_framework/configs/base/config.py`, stages the TOML, and downloads the
-Wan2.2 VAE.
+`COSMOS3_UV_GROUP=cu128-train` + a PyTorch container for older drivers), applies
+the overlay (via `apply_overlay.sh`), stages the TOML, and downloads the Wan2.2
+VAE.
+
+### Apply / re-apply the overlay (`apply_overlay.sh`)
+
+The overlay step is factored into `scripts/apply_overlay.sh` so you can run it
+on its own — use it whenever you edit anything under `framework_patch/` (e.g.
+`groot_configs.py` or `dataset.py`), or to fix a venv that errors with
+`ModuleNotFoundError: ... cosmos_framework.data.vfm.action.gr00t_dreams`. It
+rsyncs `framework_patch/` onto the target install, registers the experiment in
+`config.py` (idempotent), installs the extra deps (`albumentations`, `imageio`,
+`dm-tree`), and verifies the overlaid modules import.
+
+```bash
+# activate the venv that has cosmos_framework, then:
+bash scripts/apply_overlay.sh                              # auto-detects the install
+bash scripts/apply_overlay.sh --framework-dir /path/to/cosmos-framework   # explicit
+bash scripts/apply_overlay.sh --dry-run                   # show what would copy
+bash scripts/apply_overlay.sh --no-deps                   # skip pip install
+```
+
+Target resolution order: `--framework-dir` → `$COSMOS3_FRAMEWORK_DIR` →
+auto-detect from the active `python` (`import cosmos_framework`) →
+`$WORKSPACE/packages/cosmos3`.
 
 ## Pre-flight (must run on the cluster)
 
@@ -291,20 +312,77 @@ production run:
    ```
    If it reports a missing modality key, FIX the `EMBODIMENT_REGISTRY` entry in
    `groot_configs.py`.
-3. **Compute normalization stats** (writes `meta/stats_cosmos.json`, and CMR's
-   `meta/stats_cosmos-44D.json`); ratios are already frame-proportional from the
-   modality report but can be refreshed from each `meta/info.json::total_frames`:
+3. **Compute normalization stats** — writes **experiment-postfixed** files into
+   each dataset's `meta/` (see [Stats file naming & collision avoidance](#stats-file-naming--collision-avoidance)).
+   With `COSMOS_OPENH_STATS_POSTFIX=c3hss-v1` (set by `setup_workspace.sh` /
+   `env.sh`) this writes `meta/stats_cosmos-c3hss-v1.json` (and CMR
+   `meta/stats_cosmos-44D-c3hss-v1.json`):
    ```bash
-   python scripts/compute_openh_action_stats.py --root "$OPENH_SURGICAL_ROOT"
+   source "$WORKSPACE/env.sh"   # exports COSMOS_OPENH_STATS_POSTFIX
+   python scripts/compute_openh_action_stats.py --root "$OPENH_SURGICAL_ROOT" \
+       --postfix "$COSMOS_OPENH_STATS_POSTFIX" --experiment-id c3hss_openh_44d_v1
    ```
-4. **Build the CMR clutch-aware filter caches**:
+   The training loader reads the same `COSMOS_OPENH_STATS_POSTFIX` and
+   strict-matches it. Each file embeds a `_provenance` block and an archival
+   sidecar is written; an existing file with differing provenance is NOT
+   overwritten without `--force`.
+4. **Build the CMR clutch-aware filter caches** (content-addressed by
+   horizon/stride; safe to share across experiments — not postfixed):
    ```bash
-   python scripts/compute_cmr_filtered_episodes_cache.py
+   for proc in cholecystectomy hysterectomy inguinal_hernia prostatectomy; do
+     python scripts/compute_cmr_filtered_episodes_cache.py \
+       --dataset-path "$OPENH_SURGICAL_ROOT/cmr_surgical/$proc"
+   done
    ```
 5. **Smoke test** (1 node, 10 iters; exercises every dataset + stats files):
    ```bash
    sbatch scripts/slurm_smoke.sbatch
    ```
+
+## Stats file naming & collision avoidance
+
+Post-transform normalization stats are written **into each dataset's shared
+`meta/` directory on the canonical Open-H tree** (the action transforms change
+dimensionality — e.g. 7D quat → 9D rot6d — so raw `stats.json` is unusable).
+Because that tree is shared, **independent experiments collide** on the default
+`stats_cosmos.json` / `stats_cosmos-44D.json` filenames — concretely, a
+colleague's 54D run already placed `stats_cosmos.json` in those `meta/` dirs, so
+a naive 44D run would either overwrite theirs or silently read theirs.
+
+To prevent this, the stats filename carries an **experiment postfix** from the
+`COSMOS_OPENH_STATS_POSTFIX` env var (mirrors the od-hamlyn-cmr
+`CMR_28D_EXP_POSTFIX` pattern). With `COSMOS_OPENH_STATS_POSTFIX=c3hss-v1`:
+
+| Embodiment | File written / read |
+| --- | --- |
+| CMR Versius | `meta/stats_cosmos-44D-c3hss-v1.json` |
+| other Open-H | `meta/stats_cosmos-c3hss-v1.json` |
+
+Mechanics (both sides read the SAME env var, so they always agree):
+
+- **Loader** (`gr00t_dreams/data/dataset.py`): builds the filename from
+  `COSMOS_OPENH_STATS_POSTFIX` and **strict-matches** it when set (a missing
+  postfixed file is a hard error — it never silently falls back to the bare,
+  possibly-someone-else's, `stats_cosmos.json`). Unset → legacy bare names.
+- **Generator** (`scripts/compute_openh_action_stats.py`): `--postfix` (or the
+  env var) selects the same names, and additionally:
+  - embeds a `_provenance` block in every file — `experiment_id`, `action_rep`
+    (`44D`), the exact **dataset-set hash + leaf list**, horizon, stride,
+    sampling, git rev, UTC timestamp (the loader skips `_`-prefixed keys);
+  - writes an immutable **archival sidecar** `stats_cosmos[-44D].<experiment_id>.json`
+    next to the live file so prior runs are never lost;
+  - **refuses to overwrite** an existing file whose provenance differs (different
+    experiment id or dataset set) unless `--force` — no silent clobber.
+
+`setup_workspace.sh` sets `COSMOS_OPENH_STATS_POSTFIX` (default `c3hss-v1`) into
+`env.sh`, and the Slurm launchers propagate it into the container, so training
+reads the matching files. To run a *different* mixture/experiment later, just
+pick a new postfix + `--experiment-id`.
+
+Note: the **CMR clutch filter caches** (`cmr_filter_cache_*-44D.json`) are
+content-addressed by horizon/stride only (independent of action space and
+mixture) and are **not** produced by the colleague's stack, so they don't
+collide and are intentionally **not** postfixed.
 
 ## Launch
 

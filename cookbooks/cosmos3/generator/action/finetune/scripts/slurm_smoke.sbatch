@@ -55,7 +55,7 @@ srun --ntasks=1 --ntasks-per-node=1 \
   --container-image="$CONTAINER_IMAGE" \
   --container-mounts="$MOUNTS" \
   --container-workdir=/workspace \
-  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE=offline,OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}" \
+  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE=offline,OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}" \
   "$COOKBOOK_DIR/scripts/_eos_torchrun_inner.sh" \
   -m cosmos_framework.scripts.train \
   --sft-toml="$WORKSPACE/configs/action_fdm_open_h_sft_nano.toml" \
