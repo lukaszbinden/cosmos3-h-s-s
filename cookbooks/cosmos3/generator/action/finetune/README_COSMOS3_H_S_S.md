@@ -371,10 +371,17 @@ To prevent this, the stats filename carries an **experiment postfix** from the
 
 Mechanics (both sides read the SAME env var, so they always agree):
 
+- **A postfix is REQUIRED on both sides** — to prevent silent collisions with
+  another experiment's stats in the shared `meta/` dir, an unset postfix is a
+  **hard error**, not a warning:
+  - Loader: raises if `COSMOS_OPENH_STATS_POSTFIX` is unset (escape hatch:
+    `COSMOS_OPENH_ALLOW_BARE_STATS=1`).
+  - Generator: exits non-zero if neither `--postfix` nor the env var is set
+    (escape hatch: `--allow-bare-stats-filename`).
 - **Loader** (`gr00t_dreams/data/dataset.py`): builds the filename from
-  `COSMOS_OPENH_STATS_POSTFIX` and **strict-matches** it when set (a missing
-  postfixed file is a hard error — it never silently falls back to the bare,
-  possibly-someone-else's, `stats_cosmos.json`). Unset → legacy bare names.
+  `COSMOS_OPENH_STATS_POSTFIX` and **strict-matches** it (a missing postfixed
+  file is a hard error — it never silently falls back to the bare,
+  possibly-someone-else's, `stats_cosmos.json`).
 - **Generator** (`scripts/compute_openh_action_stats.py`): `--postfix` (or the
   env var) selects the same names, and additionally:
   - embeds a `_provenance` block in every file — `experiment_id`, `action_rep`

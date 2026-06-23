@@ -371,16 +371,39 @@ def main() -> None:
         help="Human experiment id recorded in _provenance + sidecar name (default: the postfix).",
     )
     parser.add_argument("--no-sidecar", action="store_true", help="do not write the archival sidecar copy")
+    parser.add_argument(
+        "--allow-bare-stats-filename",
+        action="store_true",
+        help=(
+            "ESCAPE HATCH: permit writing the BARE stats_cosmos.json / stats_cosmos-44D.json "
+            "names (no postfix). DANGEROUS — these collide with other experiments' stats in the "
+            "shared meta/ dir (e.g. a colleague's 54D run). Only use intentionally for a "
+            "legacy/baseline file."
+        ),
+    )
     args = parser.parse_args()
 
     postfix = _resolve_postfix(args)
     experiment_id = (args.experiment_id or postfix or "").strip()
+    if not postfix and not args.allow_bare_stats_filename:
+        print(
+            "[FATAL] No --postfix and no COSMOS_OPENH_STATS_POSTFIX set.\n"
+            "  Stats are written INTO the shared dataset meta/ dirs, so writing the bare\n"
+            "  stats_cosmos.json / stats_cosmos-44D.json names would COLLIDE with other\n"
+            "  experiments' stats (e.g. a colleague's 54D run) and silently corrupt training.\n"
+            "  Fix: pass an experiment postfix, e.g.\n"
+            "      python scripts/compute_openh_action_stats.py --root \"$OPENH_SURGICAL_ROOT\" \\\n"
+            "          --postfix c3hss-v1 --experiment-id c3hss_openh_44d_v1\n"
+            "  or export COSMOS_OPENH_STATS_POSTFIX=c3hss-v1 first (training reads the SAME var).\n"
+            "  (Intentionally need the bare name? re-run with --allow-bare-stats-filename.)",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     if not postfix:
         print(
-            "[WARN] No --postfix / COSMOS_OPENH_STATS_POSTFIX set: writing the BARE "
-            "stats_cosmos.json / stats_cosmos-44D.json names, which can COLLIDE with another "
-            "experiment's stats in the shared meta/ dir. Strongly recommended to pass --postfix "
-            "(e.g. 44D-c3hss-v1)."
+            "[WARN] --allow-bare-stats-filename: writing BARE stats_cosmos.json / "
+            "stats_cosmos-44D.json names — these CAN COLLIDE with other experiments in the "
+            "shared meta/ dir. Proceeding because you explicitly opted in."
         )
     dataset_set_leaves, dataset_set_hash = _dataset_set_signature(args)
     print(
