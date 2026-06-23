@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+# ============================================================================
+# Open-H surgical forward-dynamics SFT — run config for the
+# `action_fdm_open_h_sft_nano` experiment (Cosmos Framework port of the
+# cosmos3-internal `action_fdm_open_h_sft_nano.yaml`). The recipe knobs
+# (optimizer/lr, scheduler, grad_clip, count-based batch, 44D action space,
+# action-head skip-on-load, dataset mixture/knobs) live in the registered
+# experiment; this file only sets run-level scalars (iters, ckpt cadence,
+# parallelism shape, wandb, VAE path).
+#
+# Unified action space: 44D (CMR Versius ceiling; all other embodiments
+# zero-padded). Resolution: 480 tier (832x480 16:9).
+#
+# Env required:
+#   OPENH_SURGICAL_ROOT=/path/to/open-h-embodiment/Surgical  # (optional) re-root (B) specs
+#   DATASET_PATH=<root>                                      # (optional) re-root ALL specs
+#   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
+#   WAN_VAE_PATH=<Wan2.2_VAE.pth>
+#   IMAGINAIRE_OUTPUT_ROOT=/path/to/output_root              # persist checkpoints
+# ============================================================================
+
+[job]
+task         = "vfm"
+experiment   = "action_fdm_open_h_sft_nano"
+project      = "cosmos3_action_surgical"
+group        = "action_open_h"
+name         = "action_fdm_open_h_sft_nano"
+wandb_mode   = "offline"
+
+[model]
+precision = "bfloat16"
+
+[model.parallelism]
+# 8-GPU model shard per node; the launcher overrides
+# data_parallel_shard_degree to the global WORLD_SIZE (e.g. 64 for 8 nodes).
+data_parallel_shard_degree     = 8
+data_parallel_replicate_degree = 1
+
+[model.activation_checkpointing]
+mode           = "full"
+save_ops_regex = ["fmha"]
+
+[model.tokenizer]
+vae_path = "${oc.env:WAN_VAE_PATH}"
+
+[scheduler]
+cycle_lengths = [20000]   # match max_iter; 1000-step warmup set in the experiment
+
+[trainer]
+max_iter     = 20000
+logging_iter = 50
+
+[checkpoint]
+load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
+# Save every 100 iters: fine-grained recovery against 4h SLURM array-task
+# preemption (each ckpt ~30GB; prune old iters if disk-bound).
+save_iter = 100
+
+# max_samples_per_batch is 64 in the experiment (per-rank micro-batch; effective
+# batch = 64 x WORLD_SIZE). On lower-memory GPUs, reduce it at launch, e.g.:
+#   --opts dataloader_train.max_samples_per_batch=32

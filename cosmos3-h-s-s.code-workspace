@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../cosmos3-internal"
+		},
+		{
+			"path": "../cosmos-h-surgical-simulator-public"
+		},
+		{
+			"path": "../sean-cosmos3_surgical_fd"
+		}
+	],
+	"settings": {}
+}

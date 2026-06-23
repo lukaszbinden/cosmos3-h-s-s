@@ -1,0 +1,215 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from enum import Enum
+
+
+class EmbodimentTag(Enum):
+    GR1 = "gr1"
+    """
+    The GR1 dataset.
+    """
+
+    GR1_unified = "gr1_unified"
+    """
+    The GR1 unified dataset.
+    """
+
+    FRANKA = "franka"
+    """
+    The FRANKA dataset.
+    """
+
+    SO100 = "so100"
+    """
+    The SO100 dataset.
+    """
+
+    ROBOCASA = "robocasa_panda_omron"
+    """
+    The ROBOCASA dataset.
+    """
+
+    NEW_EMBODIMENT = "new_embodiment"
+    """
+    Any new embodiment for finetuning.
+    """
+
+    AGIBOT = "agibot"
+
+    # =========================================================================
+    # Open-H Surgical Embodiment Tags
+    # Matching gr00t-H/gr00t/data/embodiment_tags.py
+    # =========================================================================
+
+    CMR_VERSIUS = "cmr_versius"
+    """
+    The CMR Versius surgical robot dataset.
+    Dual-arm surgical robot with:
+    - Hybrid-relative action representation for EEF poses
+    - 44D conditioning space: 30D actions + 14D state conditioning
+    - Clutch-aware filtering and action zeroing
+    """
+
+    DVRK = "dvrk"
+    """
+    DEPRECATED: alias for ``JHU_DVRK_MONO``.
+
+    Historically this tag denoted the stereo-camera variant of the JHU
+    dVRK (da Vinci Research Kit) surgical robot. Cosmos-Predict2.5 is
+    monocular-only (reads only ``video.endoscope_left``), so the stereo
+    and mono registry entries were functionally identical and have been
+    collapsed into a single unified ``EMBODIMENT_REGISTRY["jhu_dvrk_mono"]``
+    spec (see ``groot_configs.py``).
+
+    This enum value is preserved purely for pickle / checkpoint backward
+    compatibility (removing it would break pickled training state that
+    still holds ``EmbodimentTag.DVRK`` instances). New code and dataset
+    specs **must** use ``EmbodimentTag.JHU_DVRK_MONO`` instead.
+
+    Dual-arm (PSM1/PSM2) with Cartesian EEF pose + gripper.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    """
+
+    SUTUREBOT = "suturebot"
+    """
+    The JHU SutureBot dataset (dVRK, pre-concatenated LeRobot format).
+    Dual-arm (PSM1/PSM2) with pre-concatenated actions in a single 'action.action' key.
+    Raw action: arm1(xyz(3) + rot6d(6) + gripper(1)) + arm2(same) = 20D.
+    Uses RelativeActionTransform for delta conversion.
+    """
+
+    JHU_DVRK_MONO = "jhu_dvrk_mono"
+    """
+    Canonical JHU dVRK (da Vinci Research Kit) surgical robot embodiment tag
+    for Cosmos-Predict2.5. Cosmos is monocular-only, so this uses only the
+    left endoscope video stream. Replaces the deprecated ``DVRK`` tag
+    (which is kept as an alias for pickle compatibility only).
+
+    Dual-arm (PSM1/PSM2) with Cartesian EEF pose + gripper.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    Post-transform: xyz_rel(3) + rot6d_rel(6) + gripper(1) per arm × 2 = 20D.
+    """
+
+    DVRK_UCB = "dvrk_ucb"
+    """
+    The UCBerkeley dVRK debridement dataset.
+    Dual-arm (PSM1/PSM2) with cartesian EEF control (16D).
+    Uses REL_XYZ_ROT6D for pose actions with quaternion inputs.
+    Joint-angle state channels for normalization; cartesian pose as
+    pass-through for action reference frame.
+    """
+
+    HAMLYN_30HZ = "hamlyn_30hz"
+    """
+    Hamlyn Centre dVRK surgical robot dataset - 30Hz tasks.
+    Dual-arm with Cartesian EEF pose + gripper.
+    Raw action: left_arm_pose(7D) + left_arm_gripper(1D) + right_arm_pose(7D) + right_arm_gripper(1D) = 16D.
+    """
+
+    DVRK_UCSD = "dvrk_ucsd"
+    """
+    The UCSD surgical learning dataset.
+    Dual-arm (retraction + cutter) with delta EEF pose actions.
+    Raw action: psm_retraction_pose(7D) + psm_retraction_gripper(1D) + psm_cutter_pose(7D) + psm_cutter_gripper(1D) = 16D.
+    """
+
+    USTC_TORIN = "ustc_torin"
+    """
+    The USTC Torin surgical dataset.
+    Dual-arm with Cartesian delta actions + energy channel.
+    Raw action: left_pose(7D) + left_gripper(1D) + right_pose(7D) + right_gripper(1D) = 16D.
+    """
+
+    DVRK_OBUDA = "dvrk_obuda"
+    """
+    The Obuda University Open-H dVRK datasets.
+    Dual-arm (PSM1/PSM2) with Cartesian EEF pose + gripper.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    """
+
+    ROB_SURGICAL = "rob_surgical"
+    """
+    The Rob Surgical (bitrack) dataset.
+    Single endoscope video with 4-arm Cartesian EEF state/action.
+    Raw action: left_pose(7D) + right_pose(7D) + lap_pose(7D) + aux_pose(7D) = 28D.
+    """
+
+    DVRK_STANFORD_REAL = "dvrk_stanford_real"
+    """
+    Stanford real-robot dVRK datasets (Needle Transfer, Tissue Retraction, Peg Transfer).
+    Dual-arm (PSM1/PSM2) with absolute EEF pose actions in Euler RPY.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    """
+
+    POLYU_SIM = "polyu_sim"
+    """
+    The PolyU simulated surgical dataset.
+    Single-arm surgical robot with cartesian pose + gripper.
+    Raw action: psm_cartesian_pose(7D) + psm_gripper(1D) = 8D.
+    """
+
+    MOON = "moon"
+    """
+    The Moon Surgical Maestro assistant dataset.
+    Dual-arm robot with delta translation actions only.
+    Raw action: right_arm_delta_xyz(3D) + left_arm_delta_xyz(3D) = 6D.
+    """
+
+    JHU_LSCR_MIRACLE = "jhu_lscr_miracle"
+    """
+    JHU LSCR MIRACLE datasets.
+    Dual-arm joint-angle control with relative actions.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    """
+
+    JHU_LSCR_SMARTS = "jhu_lscr_smarts"
+    """
+    JHU LSCR SMARTS offline datasets.
+    Dual-arm joint-angle control with relative actions.
+    Raw action: psm1_pose(7D) + psm1_gripper(1D) + psm2_pose(7D) + psm2_gripper(1D) = 16D.
+    """
+
+    TUD_TUNDRA = "tud_tundra"
+    """
+    The TUD TUNDRA UR5e surgical assistance dataset.
+    Single-arm with Cartesian EEF pose + gripper.
+    Raw action: eef_pose(7D) + gripper(1D) = 8D.
+    """
+
+    TURIN_MITIC_EX_VIVO = "turin_mitic_ex_vivo"
+    """
+    The Turin MITIC ex vivo surgical dataset.
+    Dual-arm dVRK (PSM1/PSM2) with absolute EEF pose actions.
+    Raw action: psm1_pose(7D) + psm2_pose(7D) = 14D (no grippers).
+    """
+
+    JHU_IMERSE = "jhu_imerse"
+    """
+    The JHU IMERSE STAR-IL dataset (single KUKA arm, no gripper action).
+    Added for the cosmos3-h-s-s Open-H mixture (union with the sean repo
+    surgical dataset list). Single-arm Cartesian EEF pose (quat xyzw).
+    Raw action: eef_pose(7D); post-transform xyz_rel(3) + rot6d_rel(6) = 9D
+    (no gripper), zero-padded to MAX_ACTION_DIM=44.
+    """
+
+    VIRTUAL_INCISION_MIRA = "virtual_incision_mira"
+    """
+    The Virtual Incision MIRA dataset (delta-command pose + gripper).
+    Added for the cosmos3-h-s-s Open-H mixture (union with the sean repo
+    surgical dataset list). The action is a haptic delta-pose command
+    (xyz + rotation deltas) plus an absolute gripper — treated as
+    pass-through ``delta`` channels, zero-padded to MAX_ACTION_DIM=44.
+    """
