@@ -921,6 +921,23 @@ class LeRobotSingleDataset(Dataset):
         """Get the trajectories in the dataset."""
         # Get trajectory lengths, IDs, and whitelist from dataset metadata
         episode_path = self.dataset_path / LE_ROBOT_EPISODE_FILENAME
+        if not episode_path.exists():
+            meta_dir = self.dataset_path / "meta"
+            try:
+                present = sorted(p.name for p in meta_dir.iterdir())
+            except Exception:  # noqa: BLE001
+                present = []
+            raise FileNotFoundError(
+                f"\n{'=' * 80}\nMISSING EPISODE METADATA\n{'=' * 80}\n"
+                f"Dataset:  {self.dataset_path}\n"
+                f"Expected: {episode_path}\n"
+                f"meta/ contains: {present}\n\n"
+                f"This LeRobot dataset has no '{LE_ROBOT_EPISODE_FILENAME}'. Some "
+                f"open-h-embodiment leaves use a newer episodes layout (e.g. "
+                f"meta/episodes/chunk-*/file-*.parquet) instead of episodes.jsonl, "
+                f"or this leaf is incomplete on disk. Verify the dataset, or exclude "
+                f"this leaf from OPEN_H_DATASET_SPECS.\n{'=' * 80}"
+            )
         with open(episode_path, "r") as f:
             episode_metadata = [json.loads(line) for line in f]
         trajectory_ids = []
