@@ -223,6 +223,19 @@ def derive_one(dataset_path: Path, force: bool, dry_run: bool) -> bool:
         print(f"  [dry-run] would write {out_path} (sample: {episodes[0]})")
         return True
 
+    # Safety: a non-contiguous episode_index almost always means the dataset is
+    # only partially staged on disk (missing parquet chunks). The gr00t_dreams
+    # loader assumes episode_index is a contiguous 0..N-1 range, so writing such
+    # a file would silently corrupt sampling. Refuse unless explicitly forced.
+    idxs = [e["episode_index"] for e in episodes]
+    if idxs != list(range(len(idxs))) and not force:
+        print(
+            "  [error] refusing to write: episode_index is not a contiguous "
+            "0..N-1 range (dataset likely partially staged). Re-stage the full "
+            "dataset, or pass --force to write anyway (NOT recommended)."
+        )
+        return False
+
     with out_path.open("w") as f:
         for e in episodes:
             f.write(json.dumps(e) + "\n")

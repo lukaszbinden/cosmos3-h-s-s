@@ -250,6 +250,8 @@ finetune/
     audit_openh_action_schemas.py       # fail-closed schema audit (run before training)
     compute_openh_action_stats.py       # per-embodiment stats_cosmos.json
     compute_cmr_filtered_episodes_cache.py  # CMR clutch-aware filter caches
+    derive_episodes_jsonl.py            # rebuild missing meta/episodes.jsonl
+    estimate_training_compute.py        # cumulative training FLOP (EU AI Act 6ND)
 ```
 
 The registry's video/state/action keys were reconciled against the live EOS
@@ -414,6 +416,101 @@ bash scripts/resubmit_until_done.sh
 
 Training output defaults to
 `$WORKSPACE/outputs/train/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano/`.
+
+## Training compute (EU AI Act 6ND)
+
+For regulatory reporting (`doc/Cummulative Compute Calculation.pdf`), cumulative
+training compute is estimated as `C ≈ 6·N·D` (N = total params, D = training
+examples seen). `scripts/estimate_training_compute.py` computes it from the
+committed run shape and prints both the **compute basis** (`D_seen` = examples
+the run processes) and the **epoch basis** (`D_dataset` = unique windows in the
+mixture):
+
+```bash
+# EVERYTHING at once (compute + dataset/epochs + energy + CO2) via --all:
+python scripts/estimate_training_compute.py --root "$OPENH_SURGICAL_ROOT" --all
+
+# Just the headline compute number from the committed run config:
+python scripts/estimate_training_compute.py --no-dataset
+
+# With D_dataset / epoch count (inside the patched venv; reads info.json totals):
+python scripts/estimate_training_compute.py --root "$OPENH_SURGICAL_ROOT" \
+    --from-filter-cache --num-frames 13
+```
+
+`--all` implies `--energy` and re-enables the dataset section, so one command
+prints the full report. Energy details below.
+
+With the defaults (`N=8e9`, `max_samples_per_batch=64`, 8×8=64 GPUs,
+`max_iter=20000`): `D_seen = 64·64·20000 ≈ 8.19e7` examples →
+**C ≈ 3.9e18 FLOP** (~27× the Cosmos-Predict2.5 Open-H reference of 1.48e17,
+driven mainly by the 2B→8B model size; ~6 orders of magnitude below the EU AI
+Act 1e25 GPAISR threshold). The same script reproduces the Predict2.5 number as
+a self-check: `--examples 12333333 --n-params 2e9` → 1.48e17.
+
+> N is the **total** model parameters (Qwen3-VL-8B backbone) per the EU AI Act
+> convention, even though this recipe only updates the gen-tower + action
+> adapters. Recompute whenever `max_iter`, the cluster shape, or
+> `max_samples_per_batch` change.
+
+### Energy & CO2
+
+Add `--energy` for an energy-first estimate (the FLOP figure is **not** used —
+FLOP→energy needs an efficiency assumption equivalent to just knowing
+GPU-hours):
+
+```
+Energy(kWh) = GPU_hours × (GPU_TDP_kW × util) × PUE
+CO2e(kg)    = Energy(kWh) × grid_carbon_intensity(kgCO2e/kWh)
+```
+
+```bash
+# From config (uses an ASSUMED sec_per_iter — see caveat):
+python scripts/estimate_training_compute.py --no-dataset --energy
+
+# Reportable, easiest: sum the WHOLE resubmit chain by job name (no ids needed).
+# Bare --sacct-name uses the slurm_train.sbatch name (cosmos3_openh_surgical_fd):
+python scripts/estimate_training_compute.py --no-dataset --energy \
+    --sacct-name --sacct-since 2026-06-20 --pue 1.1 --carbon-intensity 0.05
+
+# Or pass explicit job id(s) — comma-separated for a resubmit chain:
+python scripts/estimate_training_compute.py --no-dataset --energy \
+    --from-sacct 5487578,5487612 --pue 1.1 --carbon-intensity 0.05
+
+# Or supply GPU-hours directly if you already have them:
+python scripts/estimate_training_compute.py --no-dataset --energy --gpu-hours 4200
+```
+
+Both query `sacct -X` and compute `Σ ElapsedRaw/3600 × AllocNodes ×
+gpus_per_node` (run on a Slurm login node).
+
+**How many job ids?** This run is resumable (`--time=03:55:00`, `--requeue`,
+`resubmit_until_done.sh`), so a full 20k-step training is a **chain of many ~4h
+jobs**, not one. You need GPU-hours from *all* of them:
+
+- **`--sacct-name` (recommended)** — they all share `--job-name`, so this sums
+  the entire chain with **zero ids** to enumerate. Add `--sacct-since` if the run
+  predates the accounting window, and `--sacct-states COMPLETED,TIMEOUT` to drop
+  failed retries.
+- **`--from-sacct`** — pass **one id per `sbatch` in the chain** (a single
+  requeued id already sums its own rows; separate resubmits get new ids). Get the
+  list with `sacct --name=cosmos3_openh_surgical_fd -X -n -o JobID | paste -sd,`.
+
+With defaults (H100 700 W @ 70 %, PUE 1.2, 0.35 kgCO2e/kWh world-avg) and an
+**assumed 6 s/iter** over 20k steps × 64 GPUs ≈ 2,133 GPU-hours →
+**≈ 1.25 MWh, ≈ 0.44 tCO2e**. This is dominated by two unknowns:
+
+- **`sec_per_iter`** (no throughput logged yet): at 3 / 6 / 12 s/iter →
+  0.22 / 0.44 / 0.88 tCO2e. **Replace with `--gpu-hours <measured>`** for a real
+  number.
+- **Carbon intensity**: a low-carbon (hydro/nuclear) DC at 0.05 kgCO2e/kWh drops
+  it to **≈ 0.06 tCO2e**.
+
+> The Predict2.5 **2.65 tCO2e** is ~9,000 GPU-hours — that's *pretraining*
+> scale, **not** the 1.48e17 Open-H finetune delta (~0.1 GPU-hr). So this
+> finetune's footprint (sub-1 tCO2e) is **not** comparable to 2.65 tCO2e; the
+> right comparison is finetune-to-finetune. Confirm what scope 2.65 covers
+> before quoting them side by side.
 
 ## Licensing / provenance
 

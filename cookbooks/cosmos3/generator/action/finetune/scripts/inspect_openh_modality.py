@@ -62,6 +62,14 @@ INCLUDED_LEAVES = [
     "jhu/lcsr/arcade/cholecystectomy",
     "jhu/lcsr/arcade/cautery",
     "jhu/lcsr/miracle/prepare_to_pierce",
+    # Newly staged JHU LCSR leaves (2026-06-24 delta download) — candidates to
+    # add to OPEN_H_DATASET_SPECS once their modality.json is verified here.
+    "jhu/lcsr/miracle/needle_pick_up",
+    "jhu/lcsr/miracle/needle_regrasp",
+    "jhu/lcsr/smarts/SurgSync-multitask/P1",
+    "jhu/lcsr/smarts/SurgSync-multitask/P2",
+    "jhu/lcsr/smarts/SurgSync-multitask/P3",
+    "jhu/lcsr/smarts/SurgSync-multitask/P4",
     "jhu/lcsr/smarts/SurgSync-stitch-coldcut/P1",
     "jhu/lcsr/smarts/SurgSync-stitch-coldcut/P2",
     "jhu/lcsr/smarts/SurgSync-stitch-coldcut/P3",
