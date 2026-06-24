@@ -17,7 +17,7 @@ The training mixture targets **maximum non-synthetic surgical coverage** of the
 public Open-H-Embodiment release that fits the 1-/2-arm 44D Cartesian-pose
 contract: CMR Versius, JHU (IMERSE + LCSR ARCADE cautery / MIRACLE / SMARTS),
 Obuda, Stanford, Turin, UC Berkeley, UCSD, and TU Dresden (grasping_retraction)
-— **38 dataset leaves across 10 embodiment tags**. All video/state/action keys
+— **40 dataset leaves across 10 embodiment tags**. All video/state/action keys
 are verified against each dataset's `meta/modality.json` (see
 [Dataset mixture](#dataset-mixture)).
 
@@ -37,7 +37,7 @@ datasets that are unavailable or incompatible in the public release — **Hamlyn
 - [Why 44D (and not 54D)](#why-44d-and-not-54d)
 - [The 44D action space](#the-44d-action-space)
 - [Dataset mixture](#dataset-mixture)
-  - [Included (38 dataset leaves, 10 embodiment tags)](#included-38-dataset-leaves-10-embodiment-tags)
+  - [Included (40 dataset leaves, 10 embodiment tags)](#included-40-dataset-leaves-10-embodiment-tags)
   - [Dropped after the modality audit](#dropped-after-the-modality-audit-no-usable-metamodalityjson)
   - [Excluded (and why)](#excluded-and-why)
 - [Layout](#layout)
@@ -166,14 +166,14 @@ registry key matches a real modality subkey. The `video_keys` use the modality
 **subkey name** (e.g. `video.endoscope_left`), which can differ from the
 on-disk video folder (`observation.images.endoscope.left`).
 
-### Included (38 dataset leaves, 10 embodiment tags)
+### Included (40 dataset leaves, 10 embodiment tags)
 
 | Group | Leaves | Native dim | modality video key |
 | --- | --- | --- | --- |
 | CMR Versius | cholecystectomy, hysterectomy, inguinal_hernia, prostatectomy | 44 | `video.endoscope` |
 | JHU IMERSE (dVRK-Si) | wound_closure, srth_porcine_chole, suturebot, nephfat, srt_needle_pickup_handover, cao_cautery_combined, srt_tissue_lift | 20 | `video.endoscope_left` |
 | JHU LCSR ARCADE | arcade/cautery | 20 | `video.endoscope_left` |
-| JHU LCSR MIRACLE | miracle/prepare_to_pierce | 20 | `video.camera_left` |
+| JHU LCSR MIRACLE | miracle/{prepare_to_pierce, needle_pick_up, needle_regrasp} | 20 | `video.camera_left` |
 | JHU LCSR SMARTS | smarts/SurgSync-stitch-coldcut/{P1,P2,P3} | 20 | `video.endoscope_left` |
 | Obuda dVRK | all 11 task leaves (frs_dome, pork, pegtransfer×2, rollercoaster, needlethreading×2, seaspike×3, skinphantom) | 20 | `video.endoscope_left` |
 | Stanford real dVRK | needle_transfer, tissue_retraction, peg_transfer | 20 (Euler w6) | `video.endoscope_left` |
@@ -195,6 +195,7 @@ enum tags are kept **dormant** for easy re-add if the metadata is published:
 | --- | --- |
 | `jhu/imerse/star_il/star_il` (STAR-IL) | no modality.json |
 | `jhu/lcsr/arcade/cholecystectomy` | no modality.json (ARCADE `cautery` is kept) |
+| `jhu/lcsr/smarts/SurgSync-multitask/{P1,P2,P3,P4}` | no modality.json — raw dVRK-Si ROS dump (per-DOF dotted columns + ECM arm), ≈64k fr; needs a modality.json before it can be added (SMARTS `stitch-coldcut/{P1,P2,P3}` are kept) |
 | `virtual_incision/150_episodes_mira_needle_lift` (MIRA) | no modality.json (bespoke column layout) |
 
 ### Excluded (and why)
@@ -204,7 +205,7 @@ enum tags are kept **dormant** for easy re-add if the metadata is published:
 | Hamlyn/Imperial (whole group) | public release has NO endoscope camera (only `color`/`depth`/`wrist_{left,right}`) — incompatible with the endoscope-conditioned FD setup |
 | USTC/Tuodao (whole group) | NOT present in the public open-h-embodiment tree (was only in C-H-S-S v1's internal mirror) |
 | Moon Surgical | delta-xyz only, no verified rotation action |
-| UTenn (all leaves) | video / segmentation / action-label only — no paired Cartesian action |
+| UTenn (all 4 leaves) | NO endoscope-left camera (only `rgb`/`color`/`depth`/`tool_segmentation`/`part_id`) — incompatible with the endoscope-conditioned FD setup (same reason as Hamlyn). Newly staged 2026-06-24; re-checked and still no paired endoscope view. |
 | Rob Surgical | 3-arm / 27D layout, unsupported by the 1-/2-arm 44D contract |
 | UIC (`uic_crcd_lerobot`) | joint-only action, no verified Cartesian schema |
 | Semaphor | manual laparoscopic tools, third-person view only, no robot kinematics |
@@ -215,7 +216,6 @@ enum tags are kept **dormant** for easy re-add if the metadata is published:
 | CMR dry_box / peg_transfer | benchtop / unverified schema |
 | UCSD retraction_dataset3 / retraction_failurecase | unverified schema |
 | TUD endoscope_guidance | 4D delta-tip schema, incompatible with the pose-arm contract |
-| JHU SMARTS SurgSync-multitask P1-P4 | not audited yet (only stitch-coldcut P1-P3 included) |
 
 This set is the available `open-h-embodiment` surgical coverage that fits the
 44D contract and has verified modality metadata. See
@@ -588,12 +588,16 @@ Notable points a maintainer should know:
   `observation.state[26:33]`; gripper from `action[4:5]`. There is **no
   `state.gripper`** — the registry's earlier `state.gripper` key was removed
   (it would have failed at load).
-- **JHU LCSR SMARTS**: scalar per-joint columns + `action.psm{1,2}.gripper`;
-  pose subkeys defined in modality. Only `SurgSync-stitch-coldcut/{P1,P2,P3}`
-  are audited and included; `SurgSync-multitask/{P1..P4}` exist but are not
-  audited.
-- **JHU LCSR MIRACLE**: pose from `observation.state`, grippers from
-  `action[6]/[13]`; cameras `left`/`right`.
+- **JHU LCSR SMARTS**: `SurgSync-stitch-coldcut/{P1,P2,P3}` have a curated
+  `modality.json` (pose subkeys + `action.psm{1,2}.gripper`, `endoscope_left`)
+  and are included. `SurgSync-multitask/{P1..P4}` were re-audited 2026-06-24 and
+  have **NO `modality.json`** — they ship the raw dVRK-Si ROS dump (per-DOF
+  dotted columns like `action.psm1.pose.orientation.w` + an ECM camera arm), so
+  they are **blocked** until a `modality.json` is authored for them.
+- **JHU LCSR MIRACLE**: pose from `observation.state[18:25]/[32:39]` (quat
+  xyzw), grippers from `action[6]/[13]`; camera `left` (`video.camera_left`).
+  All three leaves — `prepare_to_pierce`, `needle_pick_up`, `needle_regrasp` —
+  share this schema (verified 2026-06-24) and are included.
 
 An automated cross-check (re-run any time) confirms every registry
 video/state/action key matches a real `modality.json` subkey for all 9 non-CMR
@@ -622,7 +626,29 @@ used embodiments.
    `total_frames`.
 7. **Dropped 3 leaves with no `modality.json`** (STAR-IL, ARCADE
    cholecystectomy, MIRA); SMARTS kept to stitch-coldcut P1-P3 (user-confirmed).
-8. **Final mixture: 38 leaves, 10 embodiments, CMR exactly 50%.**
+8. **Mixture after the first audit: 38 leaves, 10 embodiments, CMR exactly 50%.**
+9. **2026-06-24 delta-download re-audit** (`open-h-embodiment` v2 tree +
+   `inspect_openh_modality.py --included-only`, report
+   `doc/openh_modality_report_v2.json`). The delta added several orgs/leaves;
+   re-checked each against the endoscope-left + `modality.json` gates:
+   - **Added** `jhu/lcsr/miracle/needle_pick_up` (291 fr) and
+     `jhu/lcsr/miracle/needle_regrasp` (300 fr) — both have a `modality.json`
+     identical to the already-included `prepare_to_pierce`. → **+2 leaves**.
+   - **Blocked** `jhu/lcsr/smarts/SurgSync-multitask/{P1..P4}` — no
+     `modality.json` (raw ROS dump). Moved from "not audited" to the
+     dropped-after-audit list.
+   - **Skipped** `utenn/*` (newly staged) — no endoscope-left camera
+     (user-confirmed, same gate as Hamlyn).
+   - **Skipped** `polyu/*`, `sanoscience/*`, `stanford/.../simulation/*` —
+     synthetic (user-confirmed).
+   - **No-op** `stanford/.../real_robot_dvrk/*` — already in the mixture since
+     step 5; the delta merely staged the data those specs referenced.
+   - **Unchanged** `arcade/cholecystectomy` — still no `modality.json`.
+10. **Final mixture: 40 leaves, 10 embodiments, CMR ~50%.** (The 2 new MIRACLE
+    leaves add 591 fr — 0.026% of the non-CMR pool — so CMR's share and all
+    existing `mix_ratio`s are effectively unchanged; both new ratios sit at the
+    0.001 floor. `compute_openh_action_stats.py` re-derives ratios from real
+    `total_frames` at pre-flight regardless.)
 
 ### Known gaps and open items
 
@@ -639,7 +665,10 @@ used embodiments.
   dataset set changes.
 - **Dormant tags** (`jhu_imerse`, `virtual_incision_mira`) remain in the
   registry/enum for re-add if STAR-IL / MIRA publish a `modality.json`.
-- **SMARTS multitask P1-P4** could be added after auditing.
+- **SMARTS multitask P1-P4** (≈64k fr) are blocked on a missing `modality.json`
+  (raw dVRK-Si ROS dump). To add: author a `meta/modality.json` mapping the
+  per-DOF dotted columns into `psm1_pose`/`psm2_pose` (7D xyz+quat) + grippers,
+  then they slot into `JHU_LSCR_SMARTS` as-is.
 - **License headers** on ported `gr00t_dreams` files are Apache-2.0 (provenance)
   vs `OpenMDW-1.1` for new files — reconcile before publishing.
 - The cookbook is currently **untracked / not on EOS**; sync via git or

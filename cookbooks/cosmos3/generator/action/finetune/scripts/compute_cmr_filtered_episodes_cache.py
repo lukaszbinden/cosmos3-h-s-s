@@ -461,9 +461,15 @@ def main() -> None:
     parser.add_argument(
         "--split",
         type=str,
-        choices=["train", "test", "both"],
+        choices=["train", "test", "full", "both", "all"],
         default="both",
-        help="Data split to compute cache for (default: both)",
+        help=(
+            "Data split to compute cache for (default: both). The loader keys the "
+            "cache filename on its data_split, so the split here MUST match the "
+            "consumer: WrappedLeRobotSingleDataset uses 'train'/'test', but the "
+            "base LeRobotSingleDataset (e.g. compute_openh_action_stats.py) uses "
+            "'full'. Use 'all' to generate train+test+full in one pass."
+        ),
     )
     parser.add_argument(
         "--num-frames",
@@ -504,6 +510,8 @@ def main() -> None:
 
     if args.split == "both":
         splits = ["train", "test"]
+    elif args.split == "all":
+        splits = ["train", "test", "full"]
     else:
         splits = [args.split]
 

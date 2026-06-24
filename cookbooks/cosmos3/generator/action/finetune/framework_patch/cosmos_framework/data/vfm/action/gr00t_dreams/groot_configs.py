@@ -851,11 +851,25 @@ OPEN_H_DATASET_SPECS: list[dict] = [
         "mix_ratio": 0.002,
     },  # 5,288 fr
     # ===== JHU LCSR MIRACLE (dedicated embodiment; cam keys 'left'/'right') =====
+    # All three leaves share one schema (verified 2026-06-24 via
+    # inspect_openh_modality.py): video.camera_left (observation.images.left),
+    # psm1/psm2 pose (observation.state[18:25]/[32:39], quat xyzw) + grippers.
+    # Tiny datasets (≈300-600 fr each); mix_ratio rounds to the 0.001 floor.
     {
         "path": f"{_JHU_LCSR}/miracle/prepare_to_pierce",
         "embodiment": EmbodimentTag.JHU_LSCR_MIRACLE,
         "mix_ratio": 0.001,
     },  # 582 fr
+    {
+        "path": f"{_JHU_LCSR}/miracle/needle_pick_up",
+        "embodiment": EmbodimentTag.JHU_LSCR_MIRACLE,
+        "mix_ratio": 0.001,
+    },  # 291 fr
+    {
+        "path": f"{_JHU_LCSR}/miracle/needle_regrasp",
+        "embodiment": EmbodimentTag.JHU_LSCR_MIRACLE,
+        "mix_ratio": 0.001,
+    },  # 300 fr
     # ===== JHU LCSR SMARTS (dedicated embodiment; per-participant leaves) =====
     {
         "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P1",
@@ -872,8 +886,15 @@ OPEN_H_DATASET_SPECS: list[dict] = [
         "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
         "mix_ratio": 0.008,
     },  # 17,485 fr
-    # NOTE: smarts/SurgSync-multitask/{P1..P4} also exist on disk; add once
-    # their action schema is audited (Table S1 lists them under SMARTS).
+    # NOTE: smarts/SurgSync-multitask/{P1..P4} (≈64k fr total) are BLOCKED, not
+    # added: the 2026-06-24 audit (inspect_openh_modality.py) shows they have NO
+    # meta/modality.json — they ship the raw dVRK-Si ROS dump (per-DOF dotted
+    # columns: observation.cartesian_state.psm1.pose.position.x, action.psm1.
+    # pose.orientation.w, plus an ECM camera arm), NOT the flat
+    # observation.state/action vectors the stitch-coldcut leaves (and this
+    # registry's jhu_lscr_smarts entry) require. To add them, first author a
+    # meta/modality.json mapping the dotted columns into psm1_pose/psm2_pose
+    # (7D xyz+quat) + grippers; then they slot into JHU_LSCR_SMARTS as-is.
     # NOTE: JHU IMERSE STAR-IL (jhu/imerse/star_il/star_il) DROPPED
     # (no meta/modality.json on disk); jhu_imerse registry entry kept dormant.
     # ===== Obuda dVRK (stereo; left endoscope) — all task leaves =====

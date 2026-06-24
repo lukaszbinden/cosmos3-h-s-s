@@ -62,8 +62,11 @@ INCLUDED_LEAVES = [
     "jhu/lcsr/arcade/cholecystectomy",
     "jhu/lcsr/arcade/cautery",
     "jhu/lcsr/miracle/prepare_to_pierce",
-    # Newly staged JHU LCSR leaves (2026-06-24 delta download) — candidates to
-    # add to OPEN_H_DATASET_SPECS once their modality.json is verified here.
+    # Newly staged JHU LCSR leaves (2026-06-24 delta download), audited here.
+    # MIRACLE needle_pick_up / needle_regrasp HAVE a modality.json (same schema
+    # as prepare_to_pierce) and are now in OPEN_H_DATASET_SPECS. The SMARTS
+    # multitask P1-P4 leaves have NO modality.json (raw ROS dump) and are
+    # BLOCKED; kept here so re-audits keep flagging them until one is authored.
     "jhu/lcsr/miracle/needle_pick_up",
     "jhu/lcsr/miracle/needle_regrasp",
     "jhu/lcsr/smarts/SurgSync-multitask/P1",
