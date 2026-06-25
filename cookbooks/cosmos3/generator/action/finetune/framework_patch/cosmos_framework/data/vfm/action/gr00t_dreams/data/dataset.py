@@ -1773,11 +1773,22 @@ class WrappedLeRobotSingleDataset(LeRobotSingleDataset):
             trajectory_lengths.append(episode["length"])
         return np.array(trajectory_ids), np.array(trajectory_lengths)
 
-    def __getitem__(self, index: int) -> dict:
+    # Max consecutive failed samples before __getitem__ gives up and re-raises.
+    # The previous behaviour was UNBOUNDED recursion on any error
+    # (``return self.__getitem__(randint(...))``), which turns a single
+    # persistent failure — e.g. an AV1 video decoder that can't allocate memory
+    # / file descriptors ([Errno 12] / [Errno 24]) — into an endless cascade
+    # that leaks resources and never terminates. Bounding it makes a genuinely
+    # broken dataset fail fast (and visibly) instead of spinning forever.
+    _MAX_GETITEM_RETRIES = 8
+
+    def __getitem__(self, index: int, _retry_depth: int = 0) -> dict:
         """Get the data for a single step in a trajectory.
 
         Args:
             index (int): The index of the step to get.
+            _retry_depth (int): Internal — how many times we've already retried a
+                random index for this lookup. Caps the retry cascade.
 
         Returns:
             dict: The data for the step.
@@ -1838,10 +1849,20 @@ class WrappedLeRobotSingleDataset(LeRobotSingleDataset):
             trajectory_id, base_index = self.all_steps[index]
             print(
                 f"[{self.tag}/{self.dataset_name}] Error at item {index} "
-                f"(episode={trajectory_id}, base_idx={base_index}): {e}"
+                f"(episode={trajectory_id}, base_idx={base_index}) "
+                f"[retry {_retry_depth}/{self._MAX_GETITEM_RETRIES}]: {e!r}"
             )
+            if _retry_depth >= self._MAX_GETITEM_RETRIES:
+                # Stop the cascade: a persistent failure (e.g. a video decoder
+                # that can't allocate memory / fds) would otherwise recurse
+                # forever, leaking resources. Re-raise so the caller sees it.
+                raise RuntimeError(
+                    f"[{self.tag}/{self.dataset_name}] giving up after "
+                    f"{self._MAX_GETITEM_RETRIES} consecutive failed samples "
+                    f"(last index {index}, episode={trajectory_id}); most recent error: {e!r}"
+                ) from e
             print("Retrying with a random index...")
-            return self.__getitem__(randint(0, len(self) - 1))
+            return self.__getitem__(randint(0, len(self) - 1), _retry_depth=_retry_depth + 1)
 
 
 class LeRobotDataset(torch.utils.data.Dataset):
@@ -2198,7 +2219,11 @@ class MixedLeRobotDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return self._total_virtual_len
 
-    def __getitem__(self, idx: int) -> dict:
+    # See LeRobotSingleDataset._MAX_GETITEM_RETRIES — bound the retry cascade so
+    # a persistently-failing sub-dataset can't recurse forever leaking resources.
+    _MAX_GETITEM_RETRIES = 8
+
+    def __getitem__(self, idx: int, _retry_depth: int = 0) -> dict:
         """Get a sample with weighted sampling and action padding.
 
         The virtual index space is split into contiguous blocks per dataset,
@@ -2227,10 +2252,17 @@ class MixedLeRobotDataset(torch.utils.data.Dataset):
         except Exception as e:
             print(
                 f"[MixedLeRobotDataset] Error in sub-dataset {dataset_idx} "
-                f"({self.embodiment_tags[dataset_idx]}), idx={real_idx}: {e}"
+                f"({self.embodiment_tags[dataset_idx]}), idx={real_idx} "
+                f"[retry {_retry_depth}/{self._MAX_GETITEM_RETRIES}]: {e!r}"
             )
+            if _retry_depth >= self._MAX_GETITEM_RETRIES:
+                raise RuntimeError(
+                    f"[MixedLeRobotDataset] giving up after {self._MAX_GETITEM_RETRIES} "
+                    f"consecutive failed samples (last sub-dataset {dataset_idx} "
+                    f"{self.embodiment_tags[dataset_idx]}); most recent error: {e!r}"
+                ) from e
             print("Retrying with a random index...")
-            return self.__getitem__(randint(0, len(self) - 1))
+            return self.__getitem__(randint(0, len(self) - 1), _retry_depth=_retry_depth + 1)
 
         # --- Pad action to max_action_dim ---
         action = lerobot_data["action"]

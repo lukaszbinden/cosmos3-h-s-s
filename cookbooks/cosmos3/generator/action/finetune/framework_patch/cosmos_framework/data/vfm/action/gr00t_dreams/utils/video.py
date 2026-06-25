@@ -120,30 +120,46 @@ def get_frames_by_timestamps(
         # set backend
         torchvision.set_video_backend("pyav")
         # set a video stream reader
+        #
+        # IMPORTANT (fd / decoder-memory leak fix): the reader holds an open
+        # libav container (a file descriptor + a decoder context, e.g. libdav1d
+        # for AV1).  The previous code only closed it on the SUCCESS path, so any
+        # exception during seek/iterate (e.g. ``[Errno 12] Cannot allocate
+        # memory: 'avcodec_open2(libdav1d)'`` on AV1 streams) leaked the fd and
+        # the decoder.  Under the dataset's retry loop that leak compounded until
+        # the process hit ``[Errno 24] Too many open files`` and every subsequent
+        # sample failed.  We now ALWAYS close the container in a finally block.
         reader = torchvision.io.VideoReader(video_path, "video")
-        # set the first and last requested timestamps
-        # Note: previous timestamps are usually loaded, since we need to access the previous key frame
-        first_ts = timestamps[0]
-        last_ts = timestamps[-1]
-        # access closest key frame of the first requested frame
-        # Note: closest key frame timestamp is usally smaller than `first_ts` (e.g. key frame can be the first frame of the video)
-        # for details on what `seek` is doing see: https://pyav.basswood-io.com/docs/stable/api/container.html?highlight=inputcontainer#av.container.InputContainer.seek
-        reader.seek(first_ts, keyframes_only=True)
-        # load all frames from first to last requested timestamp
         loaded_frames = []
         loaded_ts = []
-        # Read one extra frame past last_ts to allow nearest-neighbor on the right.
-        read_past_last = False
-        for frame in reader:
-            current_ts = frame["pts"]
-            loaded_frames.append(frame["data"])
-            loaded_ts.append(current_ts)
-            if read_past_last:
-                break
-            if current_ts >= last_ts:
-                read_past_last = True
-        reader.container.close()
-        reader = None
+        try:
+            # set the first and last requested timestamps
+            # Note: previous timestamps are usually loaded, since we need to access the previous key frame
+            first_ts = timestamps[0]
+            last_ts = timestamps[-1]
+            # access closest key frame of the first requested frame
+            # Note: closest key frame timestamp is usally smaller than `first_ts` (e.g. key frame can be the first frame of the video)
+            # for details on what `seek` is doing see: https://pyav.basswood-io.com/docs/stable/api/container.html?highlight=inputcontainer#av.container.InputContainer.seek
+            reader.seek(first_ts, keyframes_only=True)
+            # load all frames from first to last requested timestamp
+            # Read one extra frame past last_ts to allow nearest-neighbor on the right.
+            read_past_last = False
+            for frame in reader:
+                current_ts = frame["pts"]
+                loaded_frames.append(frame["data"])
+                loaded_ts.append(current_ts)
+                if read_past_last:
+                    break
+                if current_ts >= last_ts:
+                    read_past_last = True
+        finally:
+            # Always release the underlying libav container (fd + decoder),
+            # even if seek/iteration raised.
+            try:
+                reader.container.close()
+            except Exception:  # noqa: BLE001
+                pass
+            reader = None
 
         if len(loaded_frames) == 0:
             raise ValueError(
