@@ -74,10 +74,33 @@ dataset's modality.json the run fails closed (KeyError) rather than mis-normaliz
 
 from __future__ import annotations
 
+import os
+
+# ---------------------------------------------------------------------------
+# Clamp every native thread pool to 1 BEFORE importing numpy/torch/cv2/av.
+# ---------------------------------------------------------------------------
+# This stats job is I/O-bound (video decode + parquet reads), not compute-bound,
+# so multithreaded BLAS/OpenMP buys nothing — but it COSTS a lot of threads.
+# OpenMP/MKL/OpenBLAS each default to one thread PER CORE (nproc can be 80 on
+# these nodes), and torch spins its own intra-op pool, ffmpeg its decoder
+# threads, etc. On a contended login node those pools collectively blow past the
+# per-user/cgroup thread (pids) ceiling and the process dies with:
+#   ``libgomp: Thread creation failed: Resource temporarily unavailable``
+# Setting these to "1" before the libraries load makes each pool single-threaded
+# and keeps total thread count tiny. MUST be set before the first numpy import.
+for _var in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "OMP_THREAD_LIMIT",
+):
+    os.environ[_var] = "1"  # force (not setdefault): override any inherited high value
+
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import time
@@ -85,6 +108,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+
+# Also clamp torch's thread pools if torch is importable (the dataset pulls it
+# in transitively). Done here, after the env vars, so it's belt-and-suspenders.
+try:
+    import torch
+
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except Exception:  # noqa: BLE001
+    pass
 
 
 # Tell the loader (LeRobotSingleDataset._get_metadata) NOT to load a stats file
