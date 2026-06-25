@@ -80,6 +80,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -289,17 +290,29 @@ def compute_for_dataset(
         print(f"[WARN] {dataset_path} has 0 samples; skipping")
         return None
     stride = max(1, n // max_windows) if max_windows and n > max_windows else 1
-    idxs = range(0, n, stride)
+    idxs = list(range(0, n, stride))
+    n_windows = len(idxs)
+    print(
+        f"[run]  {embodiment:22s} {dataset_path.name}: {n:,} steps in split '{data_split}'; "
+        f"sampling {n_windows:,} windows (stride {stride})",
+        flush=True,
+    )
 
     # Accumulate per-key concatenated-over-time arrays.
     buckets: dict[str, list[np.ndarray]] = {}
     used = 0
-    for i in idxs:
+    failed = 0
+    start_t = time.time()
+    # Heartbeat at most ~20 times per dataset (and never more often than needed),
+    # so a long silent video-decode loop still shows it's alive without spamming.
+    hb_every = max(1, n_windows // 20)
+    for n_seen, i in enumerate(idxs, start=1):
         try:
             sample = ds[i]
         except Exception as e:  # noqa: BLE001
-            if used == 0:
-                print(f"[warn] sample {i} failed: {e!r}")
+            failed += 1
+            if failed <= 3:
+                print(f"  [warn] sample {i} failed: {e!r}", flush=True)
             continue
         for key, val in sample.items():
             if not (key.startswith("action.") or key.startswith("state.")):
@@ -310,6 +323,16 @@ def compute_for_dataset(
             arr = arr.reshape(-1, arr.shape[-1])
             buckets.setdefault(key, []).append(arr)
         used += 1
+        if n_seen % hb_every == 0 or n_seen == n_windows:
+            elapsed = time.time() - start_t
+            rate = n_seen / elapsed if elapsed > 0 else 0.0
+            eta = (n_windows - n_seen) / rate if rate > 0 else 0.0
+            print(
+                f"  [..]  {dataset_path.name}: {n_seen:,}/{n_windows:,} windows "
+                f"({100 * n_seen / n_windows:.0f}%) used={used:,} failed={failed} "
+                f"{rate:.1f} win/s ETA {eta:.0f}s",
+                flush=True,
+            )
 
     if not buckets:
         print(f"[ERROR] no action/state keys collected for {dataset_path}")
@@ -358,7 +381,10 @@ def compute_for_dataset(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(stats, f)
-    print(f"[OK] wrote {out_path}  ({used} windows, {len(buckets)} keys)")
+    print(
+        f"[OK] wrote {out_path}  ({used} windows, {failed} failed, {len(buckets)} keys)",
+        flush=True,
+    )
 
     # Archival sidecar: an immutable, postfix+experiment-tagged copy kept
     # alongside the live file so prior runs' stats are never lost even if the
