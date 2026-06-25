@@ -101,6 +101,7 @@ for _var in (
 import argparse
 import hashlib
 import json
+import multiprocessing as _mp
 import subprocess
 import sys
 import time
@@ -450,6 +451,22 @@ def compute_for_dataset(
     return out_path
 
 
+def _compute_one_worker(dataset_path: str, embodiment: str, common: dict) -> bool:
+    """Process-pool entry point: compute stats for ONE dataset leaf.
+
+    Module-level (picklable) so it works with the 'spawn' start method. The
+    spawned interpreter re-imports this module, which re-runs the top-level
+    thread-cap env writes, so each worker is single-threaded too. Returns True on
+    success (stats file written or already-present), False otherwise.
+    """
+    try:
+        res = compute_for_dataset(dataset_path=Path(dataset_path), embodiment=embodiment, **common)
+        return res is not None
+    except Exception as e:  # noqa: BLE001
+        print(f"[ERROR] {dataset_path} ({embodiment}): {e!r}", flush=True)
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -496,6 +513,18 @@ def main() -> None:
     )
     parser.add_argument("--no-sidecar", action="store_true", help="do not write the archival sidecar copy")
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Process this many DATASETS in parallel (default 1 = sequential). Each leaf is "
+            "independent and writes to its own meta/ dir, so there are no races. The per-leaf "
+            "video decode stays single-threaded, so N workers ~= N x throughput while keeping "
+            "total threads = N (safe on shared nodes). Good default: min(8, #leaves, cpus//2). "
+            "CMR leaves dominate runtime, so >=4 workers helps a lot."
+        ),
+    )
+    parser.add_argument(
         "--allow-bare-stats-filename",
         action="store_true",
         help=(
@@ -536,29 +565,62 @@ def main() -> None:
         f"data_split={args.data_split!r} test_split_ratio={args.test_split_ratio}"
     )
 
+    specs = list(_iter_specs(args))
+    common = dict(
+        num_frames=args.num_frames,
+        max_windows=args.max_windows,
+        downscaled_res=args.downscaled_res,
+        force=args.force,
+        postfix=postfix,
+        experiment_id=experiment_id,
+        dataset_set_hash=dataset_set_hash,
+        dataset_set_leaves=dataset_set_leaves,
+        data_split=args.data_split,
+        test_split_ratio=args.test_split_ratio,
+        write_sidecar=not args.no_sidecar,
+    )
+
+    workers = max(1, int(args.workers))
     errors = 0
-    for dataset_path, embodiment in _iter_specs(args):
-        try:
-            res = compute_for_dataset(
-                dataset_path=dataset_path,
-                embodiment=embodiment,
-                num_frames=args.num_frames,
-                max_windows=args.max_windows,
-                downscaled_res=args.downscaled_res,
-                force=args.force,
-                postfix=postfix,
-                experiment_id=experiment_id,
-                dataset_set_hash=dataset_set_hash,
-                dataset_set_leaves=dataset_set_leaves,
-                data_split=args.data_split,
-                test_split_ratio=args.test_split_ratio,
-                write_sidecar=not args.no_sidecar,
-            )
-            if res is None:
+
+    if workers == 1 or len(specs) <= 1:
+        for dataset_path, embodiment in specs:
+            try:
+                if compute_for_dataset(dataset_path=dataset_path, embodiment=embodiment, **common) is None:
+                    errors += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"[ERROR] {dataset_path} ({embodiment}): {e!r}")
                 errors += 1
-        except Exception as e:  # noqa: BLE001
-            print(f"[ERROR] {dataset_path} ({embodiment}): {e!r}")
-            errors += 1
+    else:
+        # Fan out across DATASETS. Each task runs compute_for_dataset in its own
+        # process (independent dataset, separate meta/ dir -> no races). Output
+        # from workers interleaves; each line is already tagged with the leaf
+        # name. We process largest-first (CMR leaves dominate) so they start
+        # immediately and don't tail the run.
+        import concurrent.futures as _cf
+
+        n_workers = min(workers, len(specs))
+        print(f"[info] processing {len(specs)} datasets with {n_workers} parallel workers", flush=True)
+        # CMR leaves are the long poles; run them first.
+        specs_sorted = sorted(specs, key=lambda s: 0 if str(s[1]) == "cmr_versius" else 1)
+        ctx = _mp.get_context("spawn")  # spawn: clean interpreter per worker (re-applies thread caps)
+        with _cf.ProcessPoolExecutor(max_workers=n_workers, mp_context=ctx) as ex:
+            fut_to_spec = {
+                ex.submit(_compute_one_worker, str(dp), str(emb), common): (dp, emb) for dp, emb in specs_sorted
+            }
+            done = 0
+            for fut in _cf.as_completed(fut_to_spec):
+                dp, emb = fut_to_spec[fut]
+                done += 1
+                try:
+                    ok = fut.result()
+                    status = "ok" if ok else "FAILED"
+                    if not ok:
+                        errors += 1
+                    print(f"[progress] {done}/{len(specs)} datasets done | {emb}:{Path(dp).name} -> {status}", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    errors += 1
+                    print(f"[ERROR] {dp} ({emb}): {e!r}", flush=True)
 
     if errors:
         print(f"\nCompleted with {errors} dataset error(s).")
