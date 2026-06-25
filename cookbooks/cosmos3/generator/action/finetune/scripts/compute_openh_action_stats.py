@@ -24,6 +24,15 @@ conversion -> collect per key), then writes per-key ``{mean, std, min, max}``
 plus a top-level ``timestep_interval`` stamp (the dataset loader verifies this
 stamp against ``EMBODIMENT_REGISTRY[tag]["timestep_interval"]``).
 
+Stats are fit on the TRAIN split only (``--data-split train``, default), NOT
+``full``: the held-out test partition stands in for future/inference data, so
+including it when estimating mean/std/min/max would leak test-set information
+into the model's input normalization. The split (``data_split`` +
+``test_split_ratio``) MUST match the experiment config so the stats are fit on
+exactly the frames the model trains on. (Consequence for CMR Versius: this needs
+the ``train`` clutch cache ``cmr_filter_cache_train_<hash>-44D.json`` — same hash
+the trainer uses — not the ``full`` one.)
+
 Collision avoidance (IMPORTANT)
 -------------------------------
 Stats are written INTO each dataset's shared ``meta/`` dir on the canonical
@@ -221,9 +230,11 @@ def compute_for_dataset(
     experiment_id: str,
     dataset_set_hash: str,
     dataset_set_leaves: list[str],
+    data_split: str = "train",
+    test_split_ratio: float = 0.02,
     write_sidecar: bool = True,
 ) -> Path | None:
-    from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import LeRobotSingleDataset
+    from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import WrappedLeRobotSingleDataset
     from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import EMBODIMENT_REGISTRY
 
     out_path = dataset_path / "meta" / _stats_filename(embodiment, postfix)
@@ -255,12 +266,22 @@ def compute_for_dataset(
     config, modality_filename, transform = _collect_pre_norm_transform(
         num_frames, embodiment, downscaled_res
     )
-    ds = LeRobotSingleDataset(
+    # Fit normalization stats on the TRAIN split ONLY (not "full"). The held-out
+    # test partition stands in for future/inference data, so including it when
+    # estimating mean/std/min/max would leak test-set information into the
+    # model's input scaling. We therefore build the SAME WrappedLeRobotSingleDataset
+    # split the experiment config uses (data_split="train", test_split_ratio=0.02)
+    # so the stats are fit on exactly the frames the model trains on.
+    # Consequence: for CMR this needs the *train* clutch cache
+    # (cmr_filter_cache_train_<hash>-44D.json), same hash the trainer uses.
+    ds = WrappedLeRobotSingleDataset(
         dataset_path=str(dataset_path),
         modality_configs=config,
         transforms=transform,
         embodiment_tag=embodiment,
         modality_filename=modality_filename,
+        data_split=data_split,
+        test_split_ratio=test_split_ratio,
     )
 
     n = len(ds)
@@ -275,7 +296,7 @@ def compute_for_dataset(
     used = 0
     for i in idxs:
         try:
-            sample = LeRobotSingleDataset.__getitem__(ds, i)
+            sample = ds[i]
         except Exception as e:  # noqa: BLE001
             if used == 0:
                 print(f"[warn] sample {i} failed: {e!r}")
@@ -307,6 +328,8 @@ def compute_for_dataset(
         "embodiment": embodiment,
         "num_frames": num_frames,
         "timestep_interval": timestep_interval,
+        "data_split": data_split,
+        "test_split_ratio": test_split_ratio,
         "max_windows": max_windows,
         "windows_used": used,
         "downscaled_res": downscaled_res,
@@ -362,6 +385,24 @@ def main() -> None:
     parser.add_argument("--dataset-path", default=None, help="single dataset path (requires --embodiment)")
     parser.add_argument("--embodiment", default=None, help="embodiment tag for --dataset-path")
     parser.add_argument("--num-frames", type=int, default=13, help="video frames (1 context + N pred); default 13")
+    parser.add_argument(
+        "--data-split",
+        choices=["train", "test", "full"],
+        default="train",
+        help=(
+            "Which split to FIT stats on (default 'train'). Stats must be fit on the "
+            "training data only — the held-out test split represents future/inference "
+            "data, so including it leaks test info into normalization. Must match the "
+            "experiment config's data_split + test_split_ratio. NOTE: 'train'/'test' need "
+            "the corresponding CMR clutch cache (cmr_filter_cache_<split>_<hash>-44D.json)."
+        ),
+    )
+    parser.add_argument(
+        "--test-split-ratio",
+        type=float,
+        default=0.02,
+        help="Trailing fraction held out as test (default 0.02; must match the experiment config).",
+    )
     parser.add_argument("--max-windows", type=int, default=200000, help="max sampled windows per dataset")
     parser.add_argument("--downscaled-res", action="store_true", help="use 256x256 transform path")
     parser.add_argument("--force", action="store_true", help="overwrite even if a differing stats file exists")
@@ -418,7 +459,8 @@ def main() -> None:
     dataset_set_leaves, dataset_set_hash = _dataset_set_signature(args)
     print(
         f"[info] postfix={postfix!r} experiment_id={experiment_id!r} "
-        f"dataset_set_hash={dataset_set_hash} ({len(dataset_set_leaves)} leaves) action_rep={ACTION_REP}"
+        f"dataset_set_hash={dataset_set_hash} ({len(dataset_set_leaves)} leaves) action_rep={ACTION_REP} "
+        f"data_split={args.data_split!r} test_split_ratio={args.test_split_ratio}"
     )
 
     errors = 0
@@ -435,6 +477,8 @@ def main() -> None:
                 experiment_id=experiment_id,
                 dataset_set_hash=dataset_set_hash,
                 dataset_set_leaves=dataset_set_leaves,
+                data_split=args.data_split,
+                test_split_ratio=args.test_split_ratio,
                 write_sidecar=not args.no_sidecar,
             )
             if res is None:

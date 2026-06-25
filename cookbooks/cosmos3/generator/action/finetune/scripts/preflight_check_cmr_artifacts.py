@@ -21,11 +21,13 @@ script recomputes that hash EXACTLY as both
 requested ``--num-frames`` (default 13 → action deltas ``[0,6,…,66]``).
 
 Which split's cache matters:
-  * the stats run builds the BASE ``LeRobotSingleDataset`` → ``data_split="full"``
-    → it needs ``cmr_filter_cache_full_<hash>-44D.json``;
-  * training via ``WrappedLeRobotSingleDataset`` uses ``train`` / ``test``.
-By default this checks ``full`` (the Step-3 prerequisite). Pass
-``--splits full,train,test`` to also assert the training caches exist.
+  * the stats run (``compute_openh_action_stats.py``) fits on the TRAIN split
+    (``data_split="train"``, to avoid test-set leakage into normalization) → it
+    needs ``cmr_filter_cache_train_<hash>-44D.json``;
+  * training via ``WrappedLeRobotSingleDataset`` also uses ``train`` (and
+    ``test`` for held-out eval).
+By default this checks ``train`` (the Step-3 prerequisite). Pass
+``--splits train,test,full`` to also assert the eval / full caches exist.
 
 This is READ-ONLY (stat() calls only); it imports ``OPEN_H_DATASET_SPECS`` so it
 sees exactly the mixture training will use.
@@ -101,8 +103,8 @@ def main() -> None:
     ap.add_argument("--num-frames", type=int, default=13, help="VIDEO frames (default 13 → 12 action deltas).")
     ap.add_argument(
         "--splits",
-        default="full",
-        help="Comma list of CMR cache splits to require (default 'full' = the Step-3 prerequisite).",
+        default="train",
+        help="Comma list of CMR cache splits to require (default 'train' = the Step-3 stats prerequisite).",
     )
     ap.add_argument("--postfix", default=None, help="Stats postfix (only used with --require-stats).")
     ap.add_argument(
