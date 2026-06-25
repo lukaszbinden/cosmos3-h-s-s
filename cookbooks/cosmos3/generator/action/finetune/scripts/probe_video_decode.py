@@ -109,7 +109,7 @@ def _probe_single_threaded(path: str) -> tuple[bool, str]:
         return False, f"{e!r}  (after {time.time() - t:.2f}s)"
 
 
-def _probe_overlay(path: str) -> tuple[bool, str]:
+def _probe_overlay(path: str, start_s: float = 0.0) -> tuple[bool, str]:
     """Use the overlay's get_frames_by_timestamps (the real code path)."""
     t = time.time()
     try:
@@ -121,12 +121,52 @@ def _probe_overlay(path: str) -> tuple[bool, str]:
     try:
         import numpy as np
 
-        # Ask for ~13 frames at 0.1s spacing from the start.
-        ts = np.arange(13, dtype=np.float32) * 0.1
+        # 13 frames at 0.1s spacing starting at ``start_s`` (test deep seeks too).
+        ts = start_s + np.arange(13, dtype=np.float32) * 0.1
         frames = get_frames_by_timestamps(path, ts, video_backend="torchvision_av")
         return True, f"got frames shape={getattr(frames, 'shape', None)} in {time.time() - t:.2f}s"
     except Exception as e:  # noqa: BLE001
         return False, f"{e!r}  (after {time.time() - t:.2f}s)"
+
+
+def _probe_seek_breakdown(path: str, start_s: float) -> str:
+    """Time seek vs decode vs rgb-convert for a DEEP start, to find the bottleneck."""
+    import av
+
+    try:
+        container = av.open(path)
+        stream = container.streams.video[0]
+        stream.thread_type = "NONE"
+        tb = stream.time_base
+        dur = float(stream.duration * tb) if stream.duration else None
+        nframes = stream.frames or 0
+        t0 = time.time()
+        container.seek(int(start_s / float(tb)), stream=stream, any_frame=False, backward=True)
+        t_seek = time.time() - t0
+        # Decode 13 frames from the seek point; time decode and rgb-convert.
+        t_dec = 0.0
+        t_rgb = 0.0
+        n = 0
+        first_pts_s = None
+        a = time.time()
+        for frame in container.decode(stream):
+            t_dec += time.time() - a
+            if first_pts_s is None and frame.pts is not None:
+                first_pts_s = float(frame.pts * tb)
+            b = time.time()
+            _ = frame.to_ndarray(format="rgb24")
+            t_rgb += time.time() - b
+            n += 1
+            if n >= 13:
+                break
+            a = time.time()
+        container.close()
+        return (
+            f"video: {nframes} frames, dur={dur:.1f}s | seek->{start_s:.1f}s took {t_seek:.3f}s, "
+            f"landed at pts={first_pts_s:.2f}s | decode 13f={t_dec:.2f}s, rgb24-convert={t_rgb:.2f}s"
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"breakdown failed: {e!r}"
 
 
 def main() -> None:
@@ -164,10 +204,18 @@ def main() -> None:
     results["single_threaded"] = ok2
     print(f"   {'[ok]  ' if ok2 else '[FAIL]'} {msg2}\n")
 
-    print("3) overlay get_frames_by_timestamps(video_backend='torchvision_av'):")
-    ok3, msg3 = _probe_overlay(str(video))
+    print("3) overlay get_frames_by_timestamps(video_backend='torchvision_av') @ t=0:")
+    ok3, msg3 = _probe_overlay(str(video), start_s=0.0)
     results["overlay"] = ok3
     print(f"   {'[ok]  ' if ok3 else '[FAIL]'} {msg3}\n")
+
+    print("4) overlay @ DEEP start (t=30s) — tests whether seek works or it decodes from frame 0:")
+    ok4, msg4 = _probe_overlay(str(video), start_s=30.0)
+    results["overlay_deep"] = ok4
+    print(f"   {'[ok]  ' if ok4 else '[FAIL]'} {msg4}\n")
+
+    print("5) seek/decode/rgb breakdown @ t=30s:")
+    print(f"   {_probe_seek_breakdown(str(video), 30.0)}\n")
 
     print("=" * 70)
     if results["single_threaded"] and not results["multithreaded"]:
