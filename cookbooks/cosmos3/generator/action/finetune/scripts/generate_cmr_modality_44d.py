@@ -226,10 +226,16 @@ def _validate_against_info(dataset_path: Path) -> list[str]:
             return int(shape[0])
         return None
 
+    # Each entry's source column is ``entry["original_key"]`` when present, else
+    # the section default ("observation.state" for state entries, "action" for
+    # action entries) — matching the loader's LeRobotState/ActionMetadata schema.
+    # (We omit original_key on action entries that read the default "action"
+    # column, to byte-match the Draco file, so don't assume the field exists.)
     need = {ACT: 0, OBS: 0}
-    for entry in {**_STATE, **_ACTION}.values():
-        col = entry["original_key"]
-        need[col] = max(need.get(col, 0), int(entry["end"]))
+    for section, default_col in ((_STATE, OBS), (_ACTION, ACT)):
+        for entry in section.values():
+            col = entry.get("original_key", default_col)
+            need[col] = max(need.get(col, 0), int(entry["end"]))
     for col, max_end in need.items():
         w = _width(col)
         if w is None:
