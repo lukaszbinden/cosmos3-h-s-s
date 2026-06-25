@@ -519,6 +519,14 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
     },
     # -----------------------------------------------------------------
     # JHU LSCR SMARTS (10Hz → stride 1, explicit xyzw quaternions)
+    # DORMANT (2026-06-25): no SMARTS leaf is currently in OPEN_H_DATASET_SPECS.
+    # The stitch-coldcut/P1..P3 leaves were dropped because their on-EOS
+    # meta/modality.json has degenerate state/action offsets (all poses → [0:7],
+    # grippers → [0:1], separate-column dotted gripper original_keys), which made
+    # the transform collect zero action/state arrays. This entry is kept so the
+    # leaves can be reinstated once their modality.json is corrected (see the
+    # DROPPED note in OPEN_H_DATASET_SPECS). Keys below assume the INTENDED flat
+    # layout: psm1_pose[0:7], psm1_gripper[7:8], psm2_pose[8:15], psm2_gripper[15:16].
     # -----------------------------------------------------------------
     "jhu_lscr_smarts": {
         "timestep_interval": 1,
@@ -871,21 +879,22 @@ OPEN_H_DATASET_SPECS: list[dict] = [
         "mix_ratio": 0.001,
     },  # 300 fr
     # ===== JHU LCSR SMARTS (dedicated embodiment; per-participant leaves) =====
-    {
-        "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P1",
-        "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
-        "mix_ratio": 0.024,
-    },  # 53,114 fr
-    {
-        "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P2",
-        "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
-        "mix_ratio": 0.015,
-    },  # 32,426 fr
-    {
-        "path": f"{_JHU_LCSR}/smarts/SurgSync-stitch-coldcut/P3",
-        "embodiment": EmbodimentTag.JHU_LSCR_SMARTS,
-        "mix_ratio": 0.008,
-    },  # 17,485 fr
+    # DROPPED (2026-06-25): the stitch-coldcut/P1..P3 leaves ship a MALFORMED
+    # meta/modality.json on EOS — every state/action subkey has degenerate
+    # start/end offsets (all poses collapsed to [0:7], all grippers to [0:1], so
+    # psm2 overlaps psm1 and nothing maps to the real psm2 columns), and the
+    # grippers carry a SEPARATE-column dotted original_key (action.psm1.gripper)
+    # instead of the flat concatenated `action` vector the registry/transform
+    # assume. This makes the StateActionTransform collect zero action/state
+    # arrays — the stats run fails with "no action/state keys collected for
+    # .../SurgSync-stitch-coldcut/P1", and training would mis-slice the same way.
+    # They are tiny (53k+32k+17k ≈ 103k fr; mix_ratio 0.024/0.015/0.008), so we
+    # drop them rather than block the mixture. To re-add: rewrite each leaf's
+    # meta/modality.json with correct sequential offsets (psm1_pose [0:7],
+    # psm1_gripper [7:8], psm2_pose [8:15], psm2_gripper [15:16]) — or, if the
+    # parquet truly stores grippers as separate dotted columns, author a
+    # SMARTS-specific registry entry that maps those columns — then verify with
+    # scripts/inspect_openh_modality.py before reinstating these specs.
     # NOTE: smarts/SurgSync-multitask/{P1..P4} (≈64k fr total) are BLOCKED, not
     # added: the 2026-06-24 audit (inspect_openh_modality.py) shows they have NO
     # meta/modality.json — they ship the raw dVRK-Si ROS dump (per-DOF dotted
