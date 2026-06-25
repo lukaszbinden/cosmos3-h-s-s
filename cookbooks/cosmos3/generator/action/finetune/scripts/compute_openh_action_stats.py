@@ -331,6 +331,19 @@ def compute_for_dataset(
         flush=True,
     )
 
+    # IMPORTANT: do NOT call ``ds[i]`` (the full __getitem__). That method builds
+    # the complete *training* sample — it runs ConcatTransform to produce a merged
+    # ``video`` key and wraps everything in CUDA tensors / t5 embeddings. But we
+    # deliberately STRIPPED ConcatTransform (and normalization) from ``transform``
+    # to measure pre-norm per-key arrays, so __getitem__ would raise
+    # ``KeyError('video')`` (no merged video key) — and the CUDA tensors would
+    # fail on a CPU node anyway. Instead we replicate __getitem__'s core directly:
+    #   transform(get_step_data(traj_id, base_index))
+    # which yields exactly the per-key transformed dict (action.* / state.* /
+    # video.<cam>) we accumulate from. ``all_steps[i]`` maps the (possibly
+    # split-trimmed) index to its (trajectory_id, base_index).
+    all_steps = ds.all_steps
+
     # Accumulate per-key concatenated-over-time arrays.
     buckets: dict[str, list[np.ndarray]] = {}
     used = 0
@@ -341,11 +354,12 @@ def compute_for_dataset(
     hb_every = max(1, n_windows // 20)
     for n_seen, i in enumerate(idxs, start=1):
         try:
-            sample = ds[i]
+            trajectory_id, base_index = all_steps[i]
+            sample = transform(ds.get_step_data(trajectory_id, base_index))
         except Exception as e:  # noqa: BLE001
             failed += 1
             if failed <= 3:
-                print(f"  [warn] sample {i} failed: {e!r}", flush=True)
+                print(f"  [warn] window {i} failed: {e!r}", flush=True)
             continue
         for key, val in sample.items():
             if not (key.startswith("action.") or key.startswith("state.")):
