@@ -116,50 +116,66 @@ def get_frames_by_timestamps(
         cap.release()
         frames = np.array(frames)
         return frames
-    elif video_backend == "torchvision_av":
-        # set backend
-        torchvision.set_video_backend("pyav")
-        # set a video stream reader
+    elif video_backend in ("torchvision_av", "pyav_single"):
+        # Single-threaded pyav decode (replaces torchvision.io.VideoReader).
         #
-        # IMPORTANT (fd / decoder-memory leak fix): the reader holds an open
-        # libav container (a file descriptor + a decoder context, e.g. libdav1d
-        # for AV1).  The previous code only closed it on the SUCCESS path, so any
-        # exception during seek/iterate (e.g. ``[Errno 12] Cannot allocate
-        # memory: 'avcodec_open2(libdav1d)'`` on AV1 streams) leaked the fd and
-        # the decoder.  Under the dataset's retry loop that leak compounded until
-        # the process hit ``[Errno 24] Too many open files`` and every subsequent
-        # sample failed.  We now ALWAYS close the container in a finally block.
-        reader = torchvision.io.VideoReader(video_path, "video")
+        # WHY NOT torchvision.io.VideoReader: it opens the libav decoder with
+        # ffmpeg's default *multithreaded* settings. On a contended login node
+        # with a low per-user thread/pids ceiling (RLIMIT_NPROC / cgroup
+        # pids.max), ffmpeg's ``avcodec_open2`` can't spawn its worker threads
+        # and fails with ``BlockingIOError(11, 'Resource temporarily
+        # unavailable', 'avcodec_open2(h264)')`` (EAGAIN) — on the very first
+        # frame, for h264 1080p CMR video. Forcing single-threaded decode
+        # (``thread_type="NONE"``, ``thread_count=1``) makes ``avcodec_open2``
+        # allocate no worker threads, sidestepping the limit entirely. It's a
+        # touch slower per clip but robust; for stats we only sample a few
+        # thousand short clips so the cost is negligible.
+        #
+        # We also ALWAYS close the container in a finally block: the reader
+        # holds a file descriptor + decoder context, and the previous
+        # torchvision code only closed it on the success path, so any decode
+        # exception leaked an fd (compounding under the retry loop into
+        # ``[Errno 24] Too many open files``).
+        container = av.open(video_path)
         loaded_frames = []
         loaded_ts = []
         try:
-            # set the first and last requested timestamps
-            # Note: previous timestamps are usually loaded, since we need to access the previous key frame
-            first_ts = timestamps[0]
-            last_ts = timestamps[-1]
-            # access closest key frame of the first requested frame
-            # Note: closest key frame timestamp is usally smaller than `first_ts` (e.g. key frame can be the first frame of the video)
-            # for details on what `seek` is doing see: https://pyav.basswood-io.com/docs/stable/api/container.html?highlight=inputcontainer#av.container.InputContainer.seek
-            reader.seek(first_ts, keyframes_only=True)
-            # load all frames from first to last requested timestamp
-            # Read one extra frame past last_ts to allow nearest-neighbor on the right.
+            stream = container.streams.video[0]
+            # Force single-threaded decode (the actual EAGAIN fix).
+            stream.thread_type = "NONE"
+            try:
+                stream.codec_context.thread_count = 1
+                stream.codec_context.thread_type = "NONE"
+            except Exception:  # noqa: BLE001
+                pass  # older/newer pyav: thread_type on the stream is enough
+
+            time_base = stream.time_base
+            first_ts = float(timestamps[0])
+            last_ts = float(timestamps[-1])
+
+            # Seek to the closest keyframe at/before first_ts. ``seek`` takes a
+            # time in stream time_base units; ``any_frame=False`` -> keyframe.
+            if time_base is not None:
+                seek_target = int(first_ts / float(time_base))
+                container.seek(seek_target, stream=stream, any_frame=False, backward=True)
+
             read_past_last = False
-            for frame in reader:
-                current_ts = frame["pts"]
-                loaded_frames.append(frame["data"])
+            for frame in container.decode(stream):
+                # frame.pts is in time_base units; convert to seconds.
+                current_ts = float(frame.pts * time_base) if (frame.pts is not None and time_base is not None) else 0.0
+                # HWC uint8 RGB to match the torchvision path's final layout.
+                arr = frame.to_ndarray(format="rgb24")
+                loaded_frames.append(arr)
                 loaded_ts.append(current_ts)
                 if read_past_last:
                     break
                 if current_ts >= last_ts:
                     read_past_last = True
         finally:
-            # Always release the underlying libav container (fd + decoder),
-            # even if seek/iteration raised.
             try:
-                reader.container.close()
+                container.close()
             except Exception:  # noqa: BLE001
                 pass
-            reader = None
 
         if len(loaded_frames) == 0:
             raise ValueError(
@@ -169,10 +185,10 @@ def get_frames_by_timestamps(
         # Match requested timestamps to closest loaded frames (like decord/opencv backends do)
         loaded_ts = np.array(loaded_ts).reshape(-1, 1)  # (num_loaded, 1)
         requested_ts = np.array(timestamps)  # (num_requested,)
-        # Find closest loaded frame for each requested timestamp
         indices = np.abs(loaded_ts - requested_ts).argmin(axis=0)
+        # loaded_frames are already HWC rgb24; stack to (T, H, W, C).
         frames = np.array([loaded_frames[i] for i in indices])
-        return frames.transpose(0, 2, 3, 1)
+        return frames
     else:
         raise NotImplementedError
 
