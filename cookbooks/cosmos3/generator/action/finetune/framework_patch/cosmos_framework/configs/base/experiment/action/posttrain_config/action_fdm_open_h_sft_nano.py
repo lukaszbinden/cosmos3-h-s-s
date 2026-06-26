@@ -30,8 +30,8 @@ Resolution: 480 tier (832x480 16:9), an officially pretrained Cosmos3-Nano
 tier whose pixel budget aligns ~perfectly with the weighted Open-H source
 resolution distribution.
 
-Usage (8 nodes x 8 GPU; data_parallel_shard_degree set to WORLD_SIZE at
-launch)::
+Usage (6 nodes x 8 GPU = 48 GPUs, matching the sean reference; data_parallel_shard_degree
+set to WORLD_SIZE at launch)::
 
     OPENH_SURGICAL_ROOT=/path/to/open-h-embodiment/Surgical \\
     BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir> \\
@@ -117,15 +117,36 @@ action_fdm_open_h_sft_nano = LazyDict(
                 "llm2action",
                 "action_modality_embed",
             ],
-            # Peak LR — matches the cosmos3-internal Open-H recipe: linearly
-            # scaled from the predict2.5 baseline (1.6e-4 @ effective bs 1024)
-            # to our 480-tier effective bs 256 -> 4.0e-5. Override via TOML if
-            # you change the effective batch size.
-            lr=4.0e-05,
+            # Peak LR = 5.0e-5 (base/shared weights).
+            #
+            # Anchored on THIS framework's own action-posttrain recipe
+            # (cosmos_framework .../action/posttrain_config/action_policy_droid_nano.py),
+            # which is the closest analog (same framework, same Nano model, same
+            # action-conditioning heads + identical 5x head multiplier). It pins:
+            #     lr = 2.0e-4  "for the 8192 global batch"
+            # and documents max_samples_per_batch as PER-RANK, so
+            # global_batch = max_samples_per_batch x world_size.
+            #
+            # Our run: max_samples_per_batch=64 (per rank) x 48 GPUs = global
+            # batch 3072. Linear-scaling the droid anchor to our batch:
+            #     2.0e-4 x (3072 / 8192) = 7.5e-5.
+            # We then discount ~30% -> 5.0e-5 for the warm-start: we resume from
+            # the 54D *surgical* 8k checkpoint (not the bare Cosmos3-Nano base),
+            # so the shared tower/diffusion-expert weights are ALREADY adapted to
+            # surgical FD. A gentler base LR avoids perturbing those inherited
+            # features early while staying in the regime the framework expects
+            # for action SFT (notably HIGHER than the prior 2.0e-5 guess, which
+            # was anchored on the internal recipe's per-GPU batch assumption that
+            # this framework's per-rank batching does not match).
+            # Override via TOML (optimizer.lr=...) if throughput/loss says otherwise.
+            lr=5.0e-05,
             lr_multipliers={
-                # Action-projection heads re-init fresh (base had
-                # max_action_dim=64, here 44; keys_to_skip_loading drops them).
-                # 5x LR lets the new heads catch up quickly.
+                # Action-projection heads re-init fresh (base/54D ckpt had a
+                # different max_action_dim; keys_to_skip_loading drops them, so
+                # they start from scratch at 44D). 5x is the SAME multiplier the
+                # framework's droid action recipe uses; here it also lets the
+                # fresh 44D heads catch up to the already-surgical tower.
+                # 5x * 5.0e-5 = 2.5e-4 effective on the heads (~the droid base LR).
                 "action2llm": 5.0,
                 "llm2action": 5.0,
                 "action_modality_embed": 5.0,

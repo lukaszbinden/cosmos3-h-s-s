@@ -245,7 +245,7 @@ finetune/
     apply_overlay.sh                    # local cp of framework_patch/ onto the installed cosmos_framework (run at job start)
     _eos_torchrun_inner.sh              # in-container torchrun wrapper (stamps the overlay, then torchrun)
     slurm_smoke.sbatch                  # 1-node, 10-iter end-to-end smoke
-    slurm_train.sbatch                  # 8-node resumable main train
+    slurm_train.sbatch                  # 6-node (48 GPU) resumable main train
     resubmit_until_done.sh              # resubmit until TARGET_ITER
     inspect_openh_modality.py           # dump modality.json/info.json/parquet checks (EOS)
     audit_openh_action_schemas.py       # fail-closed schema audit (run before training)
@@ -470,9 +470,9 @@ python scripts/estimate_training_compute.py --root "$OPENH_SURGICAL_ROOT" \
 `--all` implies `--energy` and re-enables the dataset section, so one command
 prints the full report. Energy details below.
 
-With the defaults (`N=8e9`, `max_samples_per_batch=64`, 8×8=64 GPUs,
-`max_iter=20000`): `D_seen = 64·64·20000 ≈ 8.19e7` examples →
-**C ≈ 3.9e18 FLOP** (~27× the Cosmos-Predict2.5 Open-H reference of 1.48e17,
+With the defaults (`N=8e9`, `max_samples_per_batch=64`, 6×8=48 GPUs,
+`max_iter=20000`): `D_seen = 64·48·20000 ≈ 6.14e7` examples →
+**C ≈ 2.9e18 FLOP** (~20× the Cosmos-Predict2.5 Open-H reference of 1.48e17,
 driven mainly by the 2B→8B model size; ~6 orders of magnitude below the EU AI
 Act 1e25 GPAISR threshold). The same script reproduces the Predict2.5 number as
 a self-check: `--examples 12333333 --n-params 2e9` → 1.48e17.
@@ -526,11 +526,11 @@ jobs**, not one. You need GPU-hours from *all* of them:
   list with `sacct --name=healthcareeng_holoscan-cosmos3.openh44d -X -n -o JobID | paste -sd,`.
 
 With defaults (H100 700 W @ 70 %, PUE 1.2, 0.35 kgCO2e/kWh world-avg) and an
-**assumed 6 s/iter** over 20k steps × 64 GPUs ≈ 2,133 GPU-hours →
-**≈ 1.25 MWh, ≈ 0.44 tCO2e**. This is dominated by two unknowns:
+**assumed 6 s/iter** over 20k steps × 48 GPUs ≈ 1,600 GPU-hours →
+**≈ 0.94 MWh, ≈ 0.33 tCO2e**. This is dominated by two unknowns:
 
 - **`sec_per_iter`** (no throughput logged yet): at 3 / 6 / 12 s/iter →
-  0.22 / 0.44 / 0.88 tCO2e. **Replace with `--gpu-hours <measured>`** for a real
+  0.16 / 0.33 / 0.66 tCO2e. **Replace with `--gpu-hours <measured>`** for a real
   number.
 - **Carbon intensity**: a low-carbon (hydro/nuclear) DC at 0.05 kgCO2e/kWh drops
   it to **≈ 0.06 tCO2e**.

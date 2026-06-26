@@ -49,7 +49,7 @@ PUE=1.2, 0.35 kgCO2e/kWh world avg, H100 700W @ 70%).
 Defaults mirror the committed run config
 (``toml/sft_config/action_fdm_open_h_sft_nano.toml`` +
 ``scripts/slurm_train.sbatch``): N=8e9 (Qwen3-VL-8B backbone),
-max_samples_per_batch=64, 8 nodes x 8 GPU = 64 GPUs, max_iter=20000.
+max_samples_per_batch=64, 6 nodes x 8 GPU = 48 GPUs, max_iter=20000.
 
 Usage::
 
@@ -93,7 +93,7 @@ FLOP_PER_PARAM_PER_EXAMPLE = 6
 # Committed run defaults (action_fdm_open_h_sft_nano.toml + slurm_train.sbatch).
 DEFAULT_N_PARAMS = 8_000_000_000  # Qwen3-VL-8B backbone (total params for 6ND).
 DEFAULT_BATCH_PER_RANK = 64  # max_samples_per_batch in the experiment.
-DEFAULT_NODES = 8
+DEFAULT_NODES = 6
 DEFAULT_GPUS_PER_NODE = 8
 DEFAULT_MAX_ITER = 20_000
 DEFAULT_NUM_FRAMES = 13  # 1 context + 12 prediction.

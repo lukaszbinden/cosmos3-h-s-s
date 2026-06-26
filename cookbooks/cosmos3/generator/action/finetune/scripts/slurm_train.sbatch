@@ -14,7 +14,10 @@
 #
 #SBATCH --account=healthcareeng_holoscan
 #SBATCH --partition=batch
-#SBATCH --nodes=8
+# 6 nodes x 8 H100 = 48 GPUs, matching the sean-cosmos3_surgical_fd reference run
+# (surgical_fd_nano_48gpu_cmr54). data_parallel_shard_degree is set to
+# SLURM_NNODES*8 below, so it auto-follows this node count (=48).
+#SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
@@ -93,7 +96,7 @@ fi
 echo "  log: $WORKSPACE/logs/openh44d_${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.out"
 
 # --- Pre-flight: the two artifacts the run REQUIRES on the host ------------
-# Fail fast (before burning an 8-node allocation) with a clear message.
+# Fail fast (before burning a 6-node allocation) with a clear message.
 if [[ -z "${BASE_CHECKPOINT_PATH:-}" || ! -e "$BASE_CHECKPOINT_PATH" ]]; then
   echo "FATAL: BASE_CHECKPOINT_PATH not set or missing on host: '${BASE_CHECKPOINT_PATH:-}'." >&2
   echo "       Stage the Cosmos3-Nano DCP checkpoint dir there (see env.sh)." >&2
