@@ -37,8 +37,17 @@ if [[ -f "$WORKSPACE/env.private.sh" ]]; then
   source "$WORKSPACE/env.private.sh"
 fi
 
-COOKBOOK_DIR="${COOKBOOK_DIR:-$WORKSPACE/cookbook}"
-[[ -d "$COOKBOOK_DIR/scripts" ]] || COOKBOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Cookbook dir — derive from WORKSPACE (repo root), NOT from ${BASH_SOURCE[0]}:
+# under SLURM the script body runs from a COPY (e.g. /var/spool/slurm/...), so
+# BASH_SOURCE-relative paths resolve wrong and the /cookbook mount source would
+# be bogus (-> "execve(): /cookbook/scripts/...: No such file or directory").
+# The cookbook is always at this fixed sub-path of the repo root.
+COOKBOOK_DIR="${COOKBOOK_DIR:-$WORKSPACE/cookbooks/cosmos3/generator/action/finetune}"
+if [[ ! -d "$COOKBOOK_DIR/scripts" ]]; then
+  echo "FATAL: cookbook dir not found at '$COOKBOOK_DIR' (WORKSPACE='$WORKSPACE')." >&2
+  echo "       Set COOKBOOK_DIR explicitly or fix WORKSPACE (must be the repo root)." >&2
+  exit 64
+fi
 
 MASTER_ADDR="$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n1)"
 MASTER_PORT="${MASTER_PORT:-$((20000 + SLURM_JOB_ID % 30000))}"
