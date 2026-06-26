@@ -106,7 +106,7 @@ srun --ntasks=1 --ntasks-per-node=1 \
   --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE=offline,OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh" \
   "$COOKBOOK_MOUNT/scripts/_eos_torchrun_inner.sh" \
   -m cosmos_framework.scripts.train \
-  --sft-toml="$WORKSPACE/configs/action_fdm_open_h_sft_nano.toml" \
+  --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_fdm_open_h_sft_nano.toml" \
   -- \
   job.name=action_fdm_open_h_smoke \
   job.wandb_mode=offline \
