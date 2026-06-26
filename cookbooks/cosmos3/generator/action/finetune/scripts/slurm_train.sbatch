@@ -19,8 +19,27 @@
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=cosmos3_hss_openh_44d
+#SBATCH --job-name=healthcareeng_holoscan-cosmos3.openh44d
+# --- 4h-cap auto-chaining ---------------------------------------------------
+# EOS `batch` caps wall-time at ~4h, but a 20k-step run needs much longer. Use a
+# SLURM ARRAY that runs tasks SEQUENTIALLY (%1 = at most 1 concurrent), each ≤4h.
+# The Cosmos Framework trainer auto-resumes from the run dir's
+# latest_checkpoint.txt (run-dir checkpoint beats checkpoint.load_path), so each
+# array task continues iter/optimizer/scheduler/EMA/dataloader from the previous
+# one — no manual resubmission, no extra flags. 12 tasks x ~3.9h ≈ 47h budget;
+# tasks past convergence exit immediately (target iter already reached).
+# `--dependency=singleton` also serializes vs any other job of the same name.
+# `--requeue` lets a preempted task come back. Sequential (%1) is REQUIRED:
+# parallel tasks would race on checkpoint I/O in the shared run dir.
+#SBATCH --array=0-11%1
+#SBATCH --dependency=singleton
 #SBATCH --requeue
+# Per-array-task logs: %A=array-job-id, %a=array-task-index. Lands in
+# $WORKSPACE/logs (WORKSPACE defaults to the repo root). NOTE: SLURM resolves
+# this path at submit time relative to the submit CWD, so submit from the repo
+# root (or pass --chdir). The script also re-derives WORKSPACE below.
+#SBATCH --output=logs/openh44d_%A_%a.out
+#SBATCH --error=logs/openh44d_%A_%a.out
 
 set -euo pipefail
 export TMPDIR=/tmp
@@ -48,6 +67,23 @@ OUTPUTS="$WORKSPACE/outputs/train"
 WANDB_MODE="${WANDB_MODE:-offline}"
 mkdir -p "$WORKSPACE/logs" "$OUTPUTS" "$WORKSPACE/.cache" "$WORKSPACE/.uv-cache" "$WORKSPACE/.uv-python" "$HOST_HOME/.local/share/uv"
 
+# --- Startup banner + resume status ----------------------------------------
+# The run dir the trainer reads/writes (IMAGINAIRE_OUTPUT_ROOT=/outputs ->
+# $OUTPUTS; project/group/name from the TOML). Report whether this array task
+# will RESUME (latest_checkpoint.txt present) or COLD-START from the base ckpt.
+_RUN_DIR="$OUTPUTS/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano"
+_LATEST_CKPT_FILE="$_RUN_DIR/checkpoints/latest_checkpoint.txt"
+echo "===== SLURM TRAIN START $(date -Is) ====="
+echo "  job_id=${SLURM_JOB_ID:-?}  array_job=${SLURM_ARRAY_JOB_ID:-NA}  array_task=${SLURM_ARRAY_TASK_ID:-NA}"
+echo "  nodes=${SLURM_NNODES:-?}  job_name=${SLURM_JOB_NAME:-?}  workspace=$WORKSPACE"
+echo "  run_dir=$_RUN_DIR"
+if [[ -f "$_LATEST_CKPT_FILE" ]]; then
+  echo "  RESUME: latest_checkpoint.txt -> $(cat "$_LATEST_CKPT_FILE" 2>/dev/null) (base ckpt ignored)"
+else
+  echo "  COLD-START: no latest_checkpoint.txt yet -> warm-starts from BASE_CHECKPOINT_PATH"
+fi
+echo "  log: $WORKSPACE/logs/openh44d_${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.out"
+
 # --- Pre-flight: the two artifacts the run REQUIRES on the host ------------
 # Fail fast (before burning an 8-node allocation) with a clear message.
 if [[ -z "${BASE_CHECKPOINT_PATH:-}" || ! -e "$BASE_CHECKPOINT_PATH" ]]; then
@@ -67,12 +103,20 @@ fi
 # (mirrors BASE_CHECKPOINT_PATH -> /ckpt).
 WAN_VAE_MOUNT="/wan_vae/Wan2.2_VAE.pth"
 
+# In-container mount point for this cookbook, so the inner launcher
+# ($COOKBOOK_DIR/scripts/_eos_torchrun_inner.sh) + apply_overlay.sh are reachable
+# INSIDE the container. Without this, srun is handed a HOST path that doesn't
+# exist in the container's mount namespace -> "execve(): ... No such file or
+# directory".
+COOKBOOK_MOUNT="/cookbook"
+
 # Bind-mounts: the Open-H surgical data root must be visible inside the
 # container at the same path the specs reference (OPENH_SURGICAL_ROOT and/or
 # the fs11 absolute paths). Adjust the first mount for your cluster.
 DATA_ROOT_MOUNT="${DATA_ROOT_MOUNT:-/lustre/fsw/healthcareeng_holoscan:/lustre/fsw/healthcareeng_holoscan}"
 MOUNTS="$DATA_ROOT_MOUNT"
 MOUNTS="$MOUNTS,$WORKSPACE/packages/cosmos3:/workspace"
+MOUNTS="$MOUNTS,$COOKBOOK_DIR:$COOKBOOK_MOUNT"
 MOUNTS="$MOUNTS,$OUTPUTS:/outputs"
 MOUNTS="$MOUNTS,$BASE_CHECKPOINT_PATH:/ckpt"
 MOUNTS="$MOUNTS,$WAN_VAE_PATH:$WAN_VAE_MOUNT"
@@ -84,12 +128,14 @@ MOUNTS="$MOUNTS,$HOST_HOME/.local/share/uv:$HOST_HOME/.local/share/uv"
 # Pyxis warmup (pull image once).
 srun --container-image="$CONTAINER_IMAGE" bash -c 'echo pyxis-warmup-ok on $(hostname)' || true
 
+# Inner launcher referenced at its IN-CONTAINER path ($COOKBOOK_MOUNT); overlay
+# script pointed at the same mount.
 srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
   --container-image="$CONTAINER_IMAGE" \
   --container-mounts="$MOUNTS" \
   --container-workdir=/workspace \
-  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}" \
-  "$COOKBOOK_DIR/scripts/_eos_torchrun_inner.sh" \
+  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh" \
+  "$COOKBOOK_MOUNT/scripts/_eos_torchrun_inner.sh" \
   -m cosmos_framework.scripts.train \
   --sft-toml="$WORKSPACE/configs/action_fdm_open_h_sft_nano.toml" \
   -- \

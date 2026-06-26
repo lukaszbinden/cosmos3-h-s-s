@@ -5,6 +5,14 @@
 # Resubmit slurm_train.sbatch until TARGET_ITER is reached. EOS `batch` jobs
 # cap at ~4h, and the experiment resumes from latest_checkpoint.txt, so this
 # loops: submit -> wait -> check latest_checkpoint.txt advanced -> repeat.
+#
+# ALTERNATIVE to the self-chaining SLURM array in slurm_train.sbatch
+# (--array=0-N%1 --dependency=singleton). Use ONE or the OTHER, not both:
+#   * Array (default): just `sbatch slurm_train.sbatch` — SLURM chains the tasks.
+#   * This loop: COMMENT OUT the `#SBATCH --array=...` line in slurm_train.sbatch
+#     first, otherwise each iteration here submits a whole array (double-chain).
+# This loop is useful when you want a progress-gated stop (no-progress failure
+# detection) rather than a fixed task count.
 
 set -euo pipefail
 

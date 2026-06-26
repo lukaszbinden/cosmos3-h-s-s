@@ -17,7 +17,11 @@
 #SBATCH --time=00:40:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=cosmos3_hss_openh_44d_smoke
+#SBATCH --job-name=healthcareeng_holoscan-cosmos3.openh44d_smoke
+# Per-job log under logs/ (resolved at submit time relative to the submit CWD —
+# submit from the repo root, which has a gitignored logs/). %j = job id.
+#SBATCH --output=logs/openh44d_smoke_%j.out
+#SBATCH --error=logs/openh44d_smoke_%j.out
 
 set -euo pipefail
 export TMPDIR=/tmp
@@ -62,9 +66,17 @@ fi
 # below — mirroring how BASE_CHECKPOINT_PATH is mounted at /ckpt.
 WAN_VAE_MOUNT="/wan_vae/Wan2.2_VAE.pth"
 
+# In-container mount point for this cookbook, so the inner launcher
+# ($COOKBOOK_DIR/scripts/_eos_torchrun_inner.sh) is reachable INSIDE the
+# container. Without this, srun is handed a HOST path (e.g.
+# ~/git/cosmos3-h-s-s/cookbooks/.../scripts/...) that doesn't exist in the
+# container's mount namespace -> "execve(): ... No such file or directory".
+COOKBOOK_MOUNT="/cookbook"
+
 DATA_ROOT_MOUNT="${DATA_ROOT_MOUNT:-/lustre/fsw/healthcareeng_holoscan:/lustre/fsw/healthcareeng_holoscan}"
 MOUNTS="$DATA_ROOT_MOUNT"
 MOUNTS="$MOUNTS,$WORKSPACE/packages/cosmos3:/workspace"
+MOUNTS="$MOUNTS,$COOKBOOK_DIR:$COOKBOOK_MOUNT"
 MOUNTS="$MOUNTS,$OUTPUTS:/outputs"
 MOUNTS="$MOUNTS,$BASE_CHECKPOINT_PATH:/ckpt"
 MOUNTS="$MOUNTS,$WAN_VAE_PATH:$WAN_VAE_MOUNT"
@@ -76,12 +88,14 @@ MOUNTS="$MOUNTS,$HOST_HOME/.local/share/uv:$HOST_HOME/.local/share/uv"
 srun --container-image="$CONTAINER_IMAGE" bash -c 'echo pyxis-warmup-ok on $(hostname)' || true
 
 # Small-iter overrides for a fast end-to-end smoke. 8-GPU single-node shard.
+# Inner launcher is referenced at its IN-CONTAINER path ($COOKBOOK_MOUNT), and
+# we point apply_overlay at the same mount via COSMOS3_APPLY_OVERLAY.
 srun --ntasks=1 --ntasks-per-node=1 \
   --container-image="$CONTAINER_IMAGE" \
   --container-mounts="$MOUNTS" \
   --container-workdir=/workspace \
-  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE=offline,OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}" \
-  "$COOKBOOK_DIR/scripts/_eos_torchrun_inner.sh" \
+  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE=offline,OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh" \
+  "$COOKBOOK_MOUNT/scripts/_eos_torchrun_inner.sh" \
   -m cosmos_framework.scripts.train \
   --sft-toml="$WORKSPACE/configs/action_fdm_open_h_sft_nano.toml" \
   -- \

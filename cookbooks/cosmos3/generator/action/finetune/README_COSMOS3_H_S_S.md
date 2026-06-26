@@ -410,13 +410,38 @@ collide and are intentionally **not** postfixed.
 
 ## Launch
 
-```bash
-# Single resumable 8-node job (data_parallel_shard_degree auto-set to WORLD_SIZE):
-sbatch scripts/slurm_train.sbatch
+EOS `batch` caps wall-time at ~4 h, but a 20k-step run needs far longer.
+`slurm_train.sbatch` handles this with a **self-chaining SLURM array**
+(`--array=0-11%1 --dependency=singleton --requeue`): up to 12 tasks run
+**sequentially** (`%1` = one at a time), each ≤4 h. The Cosmos Framework trainer
+**auto-resumes** from the run dir's `latest_checkpoint.txt` (the run-dir
+checkpoint takes precedence over `checkpoint.load_path`), so each task continues
+iteration / optimizer / scheduler / EMA / dataloader from the previous one — no
+manual resubmission, no extra flags. Tasks that start past the target iteration
+exit immediately.
 
-# Or resubmit until max_iter (EOS 4h wall-time loop):
-bash scripts/resubmit_until_done.sh
+```bash
+# Submit FROM THE REPO ROOT (so the relative `logs/` output path resolves and
+# WORKSPACE defaults correctly). data_parallel_shard_degree auto-set to
+# nodes*8; resume is automatic across the array tasks.
+cd "$WORKSPACE"   # = repo root by default
+sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_train.sbatch
 ```
+
+Per-task logs land in `$WORKSPACE/logs/openh44d_<arrayJobId>_<taskIdx>.out`
+(each task logs a startup banner showing whether it RESUMED or COLD-STARTED).
+
+Alternative (equivalent) chaining via an external loop — **use one OR the other,
+not both** (they'd double-chain): comment out the `#SBATCH --array=...` line in
+`slurm_train.sbatch`, then:
+
+```bash
+bash cookbooks/cosmos3/generator/action/finetune/scripts/resubmit_until_done.sh
+```
+
+To **cold-start** (ignore prior checkpoints and warm-start fresh from the base):
+delete the run dir's `checkpoints/` tree first (there is no `--resume=false` flag
+on this entrypoint).
 
 Training output defaults to
 `$WORKSPACE/outputs/train/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano/`.
@@ -473,7 +498,7 @@ CO2e(kg)    = Energy(kWh) × grid_carbon_intensity(kgCO2e/kWh)
 python scripts/estimate_training_compute.py --no-dataset --energy
 
 # Reportable, easiest: sum the WHOLE resubmit chain by job name (no ids needed).
-# Bare --sacct-name uses the slurm_train.sbatch name (cosmos3_hss_openh_44d):
+# Bare --sacct-name uses the slurm_train.sbatch name (healthcareeng_holoscan-cosmos3.openh44d):
 python scripts/estimate_training_compute.py --no-dataset --energy \
     --sacct-name --sacct-since 2026-06-20 --pue 1.1 --carbon-intensity 0.05
 
@@ -498,7 +523,7 @@ jobs**, not one. You need GPU-hours from *all* of them:
   failed retries.
 - **`--from-sacct`** — pass **one id per `sbatch` in the chain** (a single
   requeued id already sums its own rows; separate resubmits get new ids). Get the
-  list with `sacct --name=cosmos3_hss_openh_44d -X -n -o JobID | paste -sd,`.
+  list with `sacct --name=healthcareeng_holoscan-cosmos3.openh44d -X -n -o JobID | paste -sd,`.
 
 With defaults (H100 700 W @ 70 %, PUE 1.2, 0.35 kgCO2e/kWh world-avg) and an
 **assumed 6 s/iter** over 20k steps × 64 GPUs ≈ 2,133 GPU-hours →
