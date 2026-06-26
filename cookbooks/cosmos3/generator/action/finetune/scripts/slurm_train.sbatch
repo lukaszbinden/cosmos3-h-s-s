@@ -148,4 +148,4 @@ srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
   --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_fdm_open_h_sft_nano.toml" \
   -- \
   job.wandb_mode="$WANDB_MODE" \
-  model.parallelism.data_parallel_shard_degree="$((SLURM_NNODES * 8))"
+  model.config.parallelism.data_parallel_shard_degree="$((SLURM_NNODES * 8))"

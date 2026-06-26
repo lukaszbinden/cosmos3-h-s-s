@@ -112,5 +112,5 @@ srun --ntasks=1 --ntasks-per-node=1 \
   job.wandb_mode=offline \
   trainer.max_iter=10 \
   checkpoint.save_iter=10 \
-  model.parallelism.data_parallel_shard_degree=8 \
+  model.config.parallelism.data_parallel_shard_degree=8 \
   dataloader_train.max_samples_per_batch=8
