@@ -98,7 +98,7 @@ DEFAULT_GPUS_PER_NODE = 8
 DEFAULT_MAX_ITER = 20_000
 DEFAULT_NUM_FRAMES = 13  # 1 context + 12 prediction.
 # Slurm --job-name in slurm_train.sbatch (the resubmit chain shares this name).
-DEFAULT_SACCT_NAME = "cosmos3_openh_surgical_fd"
+DEFAULT_SACCT_NAME = "cosmos3_hss_openh_44d"
 
 # Cosmos-Predict2.5 Open-H reference point (for the comparison line).
 PREDICT25_FLOP = 1.48e17

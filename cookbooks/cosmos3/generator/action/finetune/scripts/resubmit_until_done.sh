@@ -9,7 +9,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE="${WORKSPACE:-$HOME/cosmos3_openh_surgical_fd}"
+WORKSPACE="${WORKSPACE:-$HOME/cosmos3-h-s-s-workspace}"
 # Default run dir follows IMAGINAIRE_OUTPUT_ROOT/{project}/{group}/{name}.
 RUN_DIR="${RUN_DIR:-$WORKSPACE/outputs/train/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano}"
 TARGET_ITER="${TARGET_ITER:-20000}"

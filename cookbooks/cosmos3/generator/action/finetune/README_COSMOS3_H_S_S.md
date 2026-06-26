@@ -262,7 +262,7 @@ report is saved at `doc/openh_modality_report.json`.
 ## Setup
 
 ```bash
-export WORKSPACE=$HOME/cosmos3_openh_surgical_fd
+export WORKSPACE=$HOME/cosmos3-h-s-s-workspace
 export OPENH_SURGICAL_ROOT=/lustre/fsw/healthcareeng_holoscan/datasets/open-h-embodiment/Surgical
 export BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
 bash scripts/setup_workspace.sh
@@ -470,7 +470,7 @@ CO2e(kg)    = Energy(kWh) × grid_carbon_intensity(kgCO2e/kWh)
 python scripts/estimate_training_compute.py --no-dataset --energy
 
 # Reportable, easiest: sum the WHOLE resubmit chain by job name (no ids needed).
-# Bare --sacct-name uses the slurm_train.sbatch name (cosmos3_openh_surgical_fd):
+# Bare --sacct-name uses the slurm_train.sbatch name (cosmos3_hss_openh_44d):
 python scripts/estimate_training_compute.py --no-dataset --energy \
     --sacct-name --sacct-since 2026-06-20 --pue 1.1 --carbon-intensity 0.05
 
@@ -495,7 +495,7 @@ jobs**, not one. You need GPU-hours from *all* of them:
   failed retries.
 - **`--from-sacct`** — pass **one id per `sbatch` in the chain** (a single
   requeued id already sums its own rows; separate resubmits get new ids). Get the
-  list with `sacct --name=cosmos3_openh_surgical_fd -X -n -o JobID | paste -sd,`.
+  list with `sacct --name=cosmos3_hss_openh_44d -X -n -o JobID | paste -sd,`.
 
 With defaults (H100 700 W @ 70 %, PUE 1.2, 0.35 kgCO2e/kWh world-avg) and an
 **assumed 6 s/iter** over 20k steps × 64 GPUs ≈ 2,133 GPU-hours →

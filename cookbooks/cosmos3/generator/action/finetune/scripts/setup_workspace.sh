@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COOKBOOK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # --- Configurable paths (override via env) ---------------------------------
-WORKSPACE="${WORKSPACE:-$HOME/cosmos3_openh_surgical_fd}"
+WORKSPACE="${WORKSPACE:-$HOME/cosmos3-h-s-s-workspace}"
 # Public Open-H-Embodiment surgical tree (the folder names the cluster
 # currently exposes: cmr_surgical, hamlyn, jhu, obuda, stanford, tud, turin,
 # ucberkeley, ucsd, virtual_incision, ...). Used to re-root the (B) specs.

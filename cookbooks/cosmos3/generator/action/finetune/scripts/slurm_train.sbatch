@@ -19,13 +19,13 @@
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=cosmos3_openh_surgical_fd
+#SBATCH --job-name=cosmos3_hss_openh_44d
 #SBATCH --requeue
 
 set -euo pipefail
 export TMPDIR=/tmp
 
-WORKSPACE="${WORKSPACE:-$HOME/cosmos3_openh_surgical_fd}"
+WORKSPACE="${WORKSPACE:-$HOME/cosmos3-h-s-s-workspace}"
 source "$WORKSPACE/env.sh"
 if [[ -f "$WORKSPACE/env.private.sh" ]]; then
   source "$WORKSPACE/env.private.sh"
