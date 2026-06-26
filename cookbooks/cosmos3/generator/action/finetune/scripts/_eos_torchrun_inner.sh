@@ -22,6 +22,14 @@ export AOT_TOKENIZER_CACHE_DIR="${AOT_TOKENIZER_CACHE_DIR:-/outputs/aot_tokenize
 
 export NCCL_DEBUG="${NCCL_DEBUG:-INFO}"
 export NCCL_TIMEOUT_MS="${NCCL_TIMEOUT_MS:-7200000}"
+# The framework builds its process group with timeout =
+# TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC (see cosmos_framework/utils/distributed.py;
+# default 1800s). NCCL_TIMEOUT_MS above is NOT read by it, so set the var the
+# framework actually honors. 7200s (2h) covers the cold-Lustre dataset-init
+# straggler that otherwise trips the pre-warm dist.barrier() on the first epoch
+# (48 ranks x 36 leaves enumerating cold parquet/caches can take >30min on a
+# subset of ranks while the fast ranks already wait at the barrier).
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="${TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC:-7200}"
 export NCCL_ASYNC_ERROR_HANDLING="${NCCL_ASYNC_ERROR_HANDLING:-1}"
 export TORCH_NCCL_ASYNC_ERROR_HANDLING="${TORCH_NCCL_ASYNC_ERROR_HANDLING:-1}"
 export TORCH_NCCL_BLOCKING_WAIT="${TORCH_NCCL_BLOCKING_WAIT:-0}"
