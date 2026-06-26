@@ -9,7 +9,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE="${WORKSPACE:-$HOME/cosmos3-h-s-s-workspace}"
+# Repo root = 6 levels above scripts/ (.../cookbooks/cosmos3/generator/action/finetune/scripts).
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../../.." && pwd)"
+# Default WORKSPACE is the repo root (framework checkout at packages/cosmos3,
+# env.sh at the root; all gitignored). Override to relocate.
+WORKSPACE="${WORKSPACE:-$REPO_ROOT}"
 # Default run dir follows IMAGINAIRE_OUTPUT_ROOT/{project}/{group}/{name}.
 RUN_DIR="${RUN_DIR:-$WORKSPACE/outputs/train/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano}"
 TARGET_ITER="${TARGET_ITER:-20000}"

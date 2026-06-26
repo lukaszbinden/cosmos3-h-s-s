@@ -23,9 +23,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COOKBOOK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Repo root = 5 levels above the cookbook dir
+# (cookbooks/cosmos3/generator/action/finetune).
+REPO_ROOT="$(cd "$COOKBOOK_DIR/../../../../.." && pwd)"
 
 # --- Configurable paths (override via env) ---------------------------------
-WORKSPACE="${WORKSPACE:-$HOME/cosmos3-h-s-s-workspace}"
+# Default WORKSPACE is the REPO ROOT itself: the framework checkout lives at
+# $WORKSPACE/packages/cosmos3 and env.sh at $WORKSPACE/env.sh. The repo's
+# .gitignore already excludes packages/, **/env.sh, .venv, outputs/, logs/, so
+# running the runtime workspace in-tree keeps git clean. Override WORKSPACE to
+# put it elsewhere (e.g. a scratch fs).
+WORKSPACE="${WORKSPACE:-$REPO_ROOT}"
 # Public Open-H-Embodiment surgical tree (the folder names the cluster
 # currently exposes: cmr_surgical, hamlyn, jhu, obuda, stanford, tud, turin,
 # ucberkeley, ucsd, virtual_incision, ...). Used to re-root the (B) specs.

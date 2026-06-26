@@ -262,7 +262,10 @@ report is saved at `doc/openh_modality_report.json`.
 ## Setup
 
 ```bash
-export WORKSPACE=$HOME/cosmos3-h-s-s-workspace
+# WORKSPACE defaults to the REPO ROOT (this repo) — the framework checkout goes
+# to $WORKSPACE/packages/cosmos3 and env.sh to $WORKSPACE/env.sh, both gitignored.
+# Override WORKSPACE only to put the runtime tree on a different filesystem:
+#   export WORKSPACE=/scratch/$USER/cosmos3-h-s-s-workspace
 export OPENH_SURGICAL_ROOT=/lustre/fsw/healthcareeng_holoscan/datasets/open-h-embodiment/Surgical
 export BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
 bash scripts/setup_workspace.sh
