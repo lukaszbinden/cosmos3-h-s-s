@@ -15,9 +15,9 @@ rsyncs the patch over it (the same delivery pattern used by the
 
 The training mixture targets **maximum non-synthetic surgical coverage** of the
 public Open-H-Embodiment release that fits the 1-/2-arm 44D Cartesian-pose
-contract: CMR Versius, JHU (IMERSE + LCSR ARCADE cautery / MIRACLE / SMARTS),
-Obuda, Stanford, Turin, UC Berkeley, UCSD, and TU Dresden (grasping_retraction)
-— **40 dataset leaves across 10 embodiment tags**. All video/state/action keys
+contract: CMR Versius, JHU (IMERSE + LCSR MIRACLE), Obuda, Stanford, Turin,
+UC Berkeley, UCSD, and TU Dresden (grasping_retraction)
+— **36 dataset leaves across 9 embodiment tags**. All video/state/action keys
 are verified against each dataset's `meta/modality.json` (see
 [Dataset mixture](#dataset-mixture)).
 
@@ -37,7 +37,7 @@ datasets that are unavailable or incompatible in the public release — **Hamlyn
 - [Why 44D (and not 54D)](#why-44d-and-not-54d)
 - [The 44D action space](#the-44d-action-space)
 - [Dataset mixture](#dataset-mixture)
-  - [Included (40 dataset leaves, 10 embodiment tags)](#included-40-dataset-leaves-10-embodiment-tags)
+  - [Included (36 dataset leaves, 9 embodiment tags)](#included-36-dataset-leaves-9-embodiment-tags)
   - [Dropped after the modality audit](#dropped-after-the-modality-audit-no-usable-metamodalityjson)
   - [Excluded (and why)](#excluded-and-why)
 - [Layout](#layout)
@@ -166,15 +166,13 @@ registry key matches a real modality subkey. The `video_keys` use the modality
 **subkey name** (e.g. `video.endoscope_left`), which can differ from the
 on-disk video folder (`observation.images.endoscope.left`).
 
-### Included (40 dataset leaves, 10 embodiment tags)
+### Included (36 dataset leaves, 9 embodiment tags)
 
 | Group | Leaves | Native dim | modality video key |
 | --- | --- | --- | --- |
 | CMR Versius | cholecystectomy, hysterectomy, inguinal_hernia, prostatectomy | 44 | `video.endoscope` |
 | JHU IMERSE (dVRK-Si) | wound_closure, srth_porcine_chole, suturebot, nephfat, srt_needle_pickup_handover, cao_cautery_combined, srt_tissue_lift | 20 | `video.endoscope_left` |
-| JHU LCSR ARCADE | arcade/cautery | 20 | `video.endoscope_left` |
 | JHU LCSR MIRACLE | miracle/{prepare_to_pierce, needle_pick_up, needle_regrasp} | 20 | `video.camera_left` |
-| JHU LCSR SMARTS | smarts/SurgSync-stitch-coldcut/{P1,P2,P3} | 20 | `video.endoscope_left` |
 | Obuda dVRK | all 11 task leaves (frs_dome, pork, pegtransfer×2, rollercoaster, needlethreading×2, seaspike×3, skinphantom) | 20 | `video.endoscope_left` |
 | Stanford real dVRK | needle_transfer, tissue_retraction, peg_transfer | 20 (Euler w6) | `video.endoscope_left` |
 | Turin MITIC | ex_vivo, plastic_pad, plastic_pad_3dmed, plastic_tube | 18 (no grippers) | `video.endoscope_left` |
@@ -184,18 +182,21 @@ on-disk video folder (`observation.images.endoscope.left`).
 
 All native widths are zero-padded to the unified 44D.
 
-### Dropped after the modality audit (no usable `meta/modality.json`)
+### Dropped (no usable `meta/modality.json`, malformed schema, or partial staging)
 
-These were in the earlier draft but have **no `modality.json`** in the public
-release, so the gr00t LeRobot loader cannot consume them. They are removed from
-the mixture; their registry entries (`jhu_imerse`, `virtual_incision_mira`) and
-enum tags are kept **dormant** for easy re-add if the metadata is published:
+These were in an earlier draft but are removed from the mixture because the gr00t
+LeRobot loader cannot consume them as staged — missing/malformed `modality.json`,
+a per-DOF column layout the loader can't slice, or incomplete video staging.
+Where applicable, registry entries (`jhu_imerse`, `virtual_incision_mira`) and
+enum tags are kept **dormant** for easy re-add once the data/metadata is fixed:
 
 | Dataset / leaf | Status |
 | --- | --- |
 | `jhu/imerse/star_il/star_il` (STAR-IL) | no modality.json |
-| `jhu/lcsr/arcade/cholecystectomy` | no modality.json (ARCADE `cautery` is kept) |
-| `jhu/lcsr/smarts/SurgSync-multitask/{P1,P2,P3,P4}` | no modality.json — raw dVRK-Si ROS dump (per-DOF dotted columns + ECM arm), ≈64k fr; needs a modality.json before it can be added (SMARTS `stitch-coldcut/{P1,P2,P3}` are kept) |
+| `jhu/lcsr/arcade/cholecystectomy` | no modality.json on disk |
+| `jhu/lcsr/arcade/cautery` | **half-staged**: 22 parquet episodes but only 12 `endoscope.left` .mp4 (episodes 12–21 have raw frames under `images/` but no video) → ~half the windows FileNotFoundError. Smallest leaf (5,288 fr, 0.05% of pool) → dropped rather than re-stage. |
+| `jhu/lcsr/smarts/SurgSync-stitch-coldcut/{P1,P2,P3}` | malformed modality.json + per-DOF scalar columns (`observation.cartesian_state.psm1.pose.position.x` … not a single sliceable vector); the gr00t loader can't assemble them without a parquet re-conversion. ≈103k fr. |
+| `jhu/lcsr/smarts/SurgSync-multitask/{P1,P2,P3,P4}` | no modality.json — raw dVRK-Si ROS dump (per-DOF dotted columns + ECM arm), ≈64k fr |
 | `virtual_incision/150_episodes_mira_needle_lift` (MIRA) | no modality.json (bespoke column layout) |
 
 ### Excluded (and why)
@@ -577,8 +578,10 @@ Notable points a maintainer should know:
 - **CMR Versius**: `action` width 100; pose w7 @ [0:7]/[13:20], grippers
   [10:11]/[23:24], energy [8:9]/[21:22] + the CMR state-conditioning keys —
   matches the dedicated CMR transform path.
-- **JHU IMERSE / ARCADE cautery / Obuda**: identical 16-wide dual-arm dVRK
-  layout → `jhu_dvrk_mono` / `dvrk_obuda` (quat xyzw).
+- **JHU IMERSE / Obuda**: identical 16-wide dual-arm dVRK layout →
+  `jhu_dvrk_mono` / `dvrk_obuda` (quat xyzw). (ARCADE `cautery` shared this
+  schema but was later dropped for incomplete video staging — see the dropped
+  table; its schema was never the problem.)
 - **Stanford**: pose is **w6 Euler**, gripper-first (`gripper[0:1]`,
   `pose[1:7]`), action width 14.
 - **Turin**: **pose-only w7, no grippers**, action width 14.
@@ -600,8 +603,8 @@ Notable points a maintainer should know:
   share this schema (verified 2026-06-24) and are included.
 
 An automated cross-check (re-run any time) confirms every registry
-video/state/action key matches a real `modality.json` subkey for all 9 non-CMR
-used embodiments.
+video/state/action key matches a real `modality.json` subkey for all 8 non-CMR
+used embodiments (after the SMARTS and ARCADE-cautery drops).
 
 ### Chronology of decisions
 
@@ -644,11 +647,25 @@ used embodiments.
    - **No-op** `stanford/.../real_robot_dvrk/*` — already in the mixture since
      step 5; the delta merely staged the data those specs referenced.
    - **Unchanged** `arcade/cholecystectomy` — still no `modality.json`.
-10. **Final mixture: 40 leaves, 10 embodiments, CMR ~50%.** (The 2 new MIRACLE
-    leaves add 591 fr — 0.026% of the non-CMR pool — so CMR's share and all
-    existing `mix_ratio`s are effectively unchanged; both new ratios sit at the
-    0.001 floor. `compute_openh_action_stats.py` re-derives ratios from real
-    `total_frames` at pre-flight regardless.)
+10. **Mixture after the v2 re-audit: 40 leaves, 10 embodiments, CMR ~50%.** (The 2
+    new MIRACLE leaves add 591 fr — 0.026% of the non-CMR pool — so CMR's share
+    and all existing `mix_ratio`s are effectively unchanged; both new ratios sit
+    at the 0.001 floor. `compute_openh_action_stats.py` re-derives ratios from
+    real `total_frames` at pre-flight regardless.)
+11. **2026-06-25/26 stats-run drops (data reality vs the offline registry):**
+    - **SMARTS `stitch-coldcut/{P1,P2,P3}` dropped** — at stats time they failed
+      every window (`AssertionError: No observation.state found`). The on-disk
+      parquet stores per-DOF scalar columns
+      (`observation.cartesian_state.psm1.pose.position.x` …), not a single
+      sliceable `observation.state`/`action` vector, so the loader can't build
+      the pose without a re-conversion. ≈103k fr. → **−3 leaves**.
+    - **ARCADE `cautery` dropped** — half-staged: 22 parquet episodes but only 12
+      `endoscope.left` .mp4 (episodes 12–21 lack video), so ~half its windows hit
+      FileNotFoundError. Smallest leaf (5,288 fr, 0.05% of pool). → **−1 leaf**.
+12. **Final mixture: 36 leaves, 9 embodiment tags, CMR ~50%.** Stats
+    (`stats_cosmos[-44D]-c3hss-v1.json`), CMR `modality-44D.json`, and CMR
+    `cmr_filter_cache_train_*-44D.json` are all present for these 36 leaves
+    (verified via `scripts/preflight_check_cmr_artifacts.py --require-stats`).
 
 ### Known gaps and open items
 

@@ -853,11 +853,17 @@ OPEN_H_DATASET_SPECS: list[dict] = [
     },  # 27,487 fr
     # ===== JHU LCSR ARCADE (dVRK-Si stereo; left endoscope) =====
     # NOTE: arcade/cholecystectomy DROPPED (no meta/modality.json on disk).
-    {
-        "path": f"{_JHU_LCSR}/arcade/cautery",
-        "embodiment": EmbodimentTag.JHU_DVRK_MONO,
-        "mix_ratio": 0.002,
-    },  # 5,288 fr
+    # DROPPED (2026-06-26): arcade/cautery is only HALF-STAGED on EOS — it has 22
+    # parquet episodes (0..21) but only 12 endoscope.left .mp4 videos (episodes
+    # 0..11); episodes 12..21 ship raw frames under images/ but no .mp4, so the
+    # video loader hits FileNotFoundError on ~half the windows (the stats run
+    # logged 2510/5183 failed for cautery, computing stats from only the 12
+    # present episodes). It is the SMALLEST leaf (5,288 fr, mix_ratio 0.002 ≈
+    # 0.05% of the non-CMR pool), so re-staging 10 small videos isn't worth it;
+    # we drop it rather than train on half-broken data. To re-add: stage the
+    # missing episode_0000{12..21}.mp4 under
+    # videos/chunk-000/observation.images.endoscope.left/ (or transcode them from
+    # the images/ frames), then recompute its stats and restore this spec.
     # ===== JHU LCSR MIRACLE (dedicated embodiment; cam keys 'left'/'right') =====
     # All three leaves share one schema (verified 2026-06-24 via
     # inspect_openh_modality.py): video.camera_left (observation.images.left),
