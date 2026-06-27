@@ -112,5 +112,10 @@ srun --ntasks=1 --ntasks-per-node=1 \
   job.wandb_mode=offline \
   trainer.max_iter=10 \
   checkpoint.save_iter=10 \
-  model.config.parallelism.data_parallel_shard_degree=8 \
-  dataloader_train.max_samples_per_batch=8
+  model.config.parallelism.data_parallel_shard_degree=8
+# NOTE: do NOT override dataloader_train.max_samples_per_batch here. The experiment
+# now uses TOKEN packing (max_sequence_length=45056, max_samples_per_batch=None);
+# setting max_samples_per_batch would make BOTH non-None and trip the batcher's
+# "exactly one of max_sequence_length / max_samples_per_batch must be None" assert.
+# The 45056 token cap already fits in memory (it's the colleague's proven value),
+# and 1-node smoke has more per-rank headroom than the 48-GPU run anyway.

@@ -232,9 +232,25 @@ action_fdm_open_h_sft_nano = LazyDict(
         dataloader_train=L(PackingDataLoader)(
             audio_sample_rate=48000,
             dataset_name="action_open_h",
-            # per-rank micro-batch; effective bs = max_samples_per_batch x world_size.
-            max_samples_per_batch=64,
-            max_sequence_length=None,  # token packing disabled (TOML can't express null)
+            # TOKEN-based packing (max_sequence_length), NOT sample-count
+            # (max_samples_per_batch). These two are mutually exclusive (the
+            # batcher asserts exactly one is None).
+            #
+            # WHY token-based: with max_samples_per_batch=64 the SequentialPackingBatcher
+            # packs 64 whole samples with NO token-length check, so at 480-res/13-frame
+            # a packed batch is far larger than 45056 tokens -> the model's
+            # max_num_tokens_after_packing cap does NOT shrink an already-over-packed
+            # batch -> activations blow past 80GB in backward (jobs 5523406/5523415
+            # OOM'd allocating (seq, 12288) bf16 at ~74GiB used). Bounding at the
+            # BATCHER with max_sequence_length=45056 caps each packed batch's token
+            # count (only as many samples as fit) -> bounded activation memory. This
+            # is exactly the colleague's proven 48-GPU surgical config.
+            # NOTE: with token batching the SAMPLES-per-batch is variable, so the
+            # earlier "effective bs = 64 x world_size" lr derivation no longer holds
+            # (the colleague runs this token-batched 48-GPU regime at lr=2.0e-5;
+            # revisit optimizer.lr if loss/throughput warrants once it trains).
+            max_samples_per_batch=None,
+            max_sequence_length=45056,
             patch_spatial=2,
             sound_latent_fps=0,
             tokenizer_spatial_compression_factor=16,

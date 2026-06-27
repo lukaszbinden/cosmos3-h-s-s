@@ -58,6 +58,10 @@ load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
 # preemption (each ckpt ~30GB; prune old iters if disk-bound).
 save_iter = 100
 
-# max_samples_per_batch is 64 in the experiment (per-rank micro-batch; effective
-# batch = 64 x WORLD_SIZE). On lower-memory GPUs, reduce it at launch, e.g.:
-#   --opts dataloader_train.max_samples_per_batch=32
+# The experiment packs by TOKENS: dataloader_train.max_sequence_length=45056
+# (max_samples_per_batch=None). This bounds per-batch activation memory (the
+# colleague's proven 48-GPU value). On lower-memory GPUs, reduce the token cap at
+# launch, e.g.:
+#   --opts dataloader_train.max_sequence_length=32768
+# Do NOT also set dataloader_train.max_samples_per_batch -- the two are mutually
+# exclusive (exactly one must be None) or the batcher will assert.
