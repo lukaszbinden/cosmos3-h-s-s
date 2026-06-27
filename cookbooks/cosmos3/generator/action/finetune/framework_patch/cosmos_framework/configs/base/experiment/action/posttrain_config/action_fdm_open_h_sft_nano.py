@@ -242,30 +242,26 @@ action_fdm_open_h_sft_nano = LazyDict(
             dataloader=L(RankPartitionedDataLoader)(
                 batch_size=1,
                 in_order=False,
-                # num_workers=0 (decode INLINE on the main process). This is the
-                # only worker setting that survives 6-node startup. The two
-                # alternatives BOTH hang at multi-node pre-warm:
-                #   * spawn (num_workers>0, the default): each worker RE-CONSTRUCTS
-                #     all 36 LeRobot leaves from scratch -> ~4 workers x 48 ranks =
-                #     ~192 procs x 36 cold-Lustre leaf inits -> hang (jobs 5518776,
-                #     5519285: only node-0 ranks reached the barrier).
-                #   * fork (multiprocessing_context="fork"): workers inherit the
-                #     built datasets (no rebuild) BUT classic fork-after-threads
-                #     DEADLOCK -- the 36-leaf numpy/BLAS/libav init leaves live
-                #     threads holding locks at fork(); children inherit locked
-                #     mutexes and hang on first numpy/decode (job 5522818: all 48
-                #     ranks' workers STARTED, but the 39 non-master workers ran 0
-                #     __getitem__ -> deadlocked). This is why torch defaults to spawn.
-                # num_workers=0 has no worker procs at all -> no rebuild, no fork
-                # deadlock; the MAIN-process build provably works (1-node smoke
-                # trained to completion; every run's node 0 finishes). Trade-off:
-                # inline decode (no prefetch overlap) costs some throughput for the
-                # whole run. Revisit with a cheap-init dataset (lazy per-leaf /
-                # manifest) + spawn if throughput becomes the bottleneck.
-                num_workers=0,
-                persistent_workers=False,  # must be False when num_workers=0
+                # num_workers=4 with the DEFAULT spawn context (NOT fork).
+                #
+                # The 48-GPU "hang" was NOT a worker problem -- it was an empty-shard
+                # bug: ActionIterableShuffleDataset shards blocks via
+                # order[global_shard::total_shards], and _OpenHShuffleBlockAdapter
+                # used to return only len(virtual_sizes)=36 blocks (one per leaf).
+                # With 48 ranks, ranks 36-47 got an EMPTY shard and spun forever in
+                # the while-True reshuffle loop, never yielding a sample, never
+                # reaching the pre-warm barrier (confirmed by py-spy: 100% of CPU in
+                # action_sft_dataset.py:79-83). That is fixed in
+                # _OpenHShuffleBlockAdapter.get_shuffle_blocks (now ~10^5 fine-grained
+                # blocks >> world_size). With that fixed, plain spawn workers are
+                # fine: each re-constructs the 36 leaves once at startup (a few min on
+                # cold Lustre) then prefetches normally. Do NOT use
+                # multiprocessing_context="fork" here -- it deadlocks (fork after the
+                # numpy/BLAS/libav init leaves locked mutexes; job 5522818).
+                num_workers=4,
+                persistent_workers=True,
                 pin_memory=True,
-                prefetch_factor=None,  # must be None when num_workers=0
+                prefetch_factor=4,
                 sampler=None,
                 datasets=dict(
                     open_h=dict(

@@ -63,12 +63,41 @@ class _OpenHShuffleBlockAdapter(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self._dataset[idx]
 
+    # Target block length (in windows). Each sub-dataset's contiguous virtual
+    # span is split into blocks of about this many windows. This must yield a
+    # block COUNT that is comfortably larger than the training world_size:
+    # ``ActionIterableShuffleDataset`` shards blocks via ``order[global_shard::
+    # total_shards]``, so if #blocks < world_size the trailing ranks get an EMPTY
+    # shard and spin forever in the ``while True`` reshuffle loop, never yielding
+    # a sample and never reaching the pre-warm barrier (this is exactly what hung
+    # the 48-GPU runs: the previous "one block per sub-dataset" gave only
+    # len(virtual_sizes)=36 blocks < 48 ranks, so ranks 36-47 got nothing).
+    # ~512 windows/block over a ~10^8-window mixture yields ~10^5 blocks — far
+    # more than any plausible world_size — while keeping each block CONTIGUOUS
+    # (sequential parquet reads + copy-on-write locality, like the DROID recipe's
+    # per-episode blocks).
+    _BLOCK_LEN = 512
+
     def get_shuffle_blocks(self) -> list[tuple[int, int]]:
+        """Contiguous ``(start, length)`` blocks over the mixture's virtual index
+        space, fine-grained enough that #blocks >> world_size.
+
+        Each sub-dataset occupies a contiguous virtual range; we split each range
+        into <= _BLOCK_LEN chunks. Splitting per sub-dataset (never spanning a
+        sub-dataset boundary) keeps a block within ONE embodiment/leaf, so reads
+        stay sequential within the source.
+        """
         blocks: list[tuple[int, int]] = []
         start = 0
         for size in self._dataset.virtual_sizes:
-            blocks.append((start, int(size)))
-            start += int(size)
+            size = int(size)
+            end = start + size
+            pos = start
+            while pos < end:
+                length = min(self._BLOCK_LEN, end - pos)
+                blocks.append((pos, length))
+                pos += length
+            start = end
         return blocks
 
 
