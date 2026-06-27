@@ -255,6 +255,32 @@ def _get_rank_prefix() -> str:
     return ""
 
 
+# --- init/getitem hang tracing -------------------------------------------------
+# Gated by COSMOS_OPENH_DEBUG_INIT (default ON). These timestamped, PID-tagged
+# prints exist to pinpoint WHERE the 6-node pre-warm hung for 2h (the non-master
+# ranks finished leaf enumeration then blocked in the first-batch fetch). They
+# fire in BOTH the main process AND DataLoader worker processes (so with
+# multiprocessing_context='fork'/'spawn' you can see each worker's progress and
+# exactly which leaf / __getitem__ / video-decode call stalls). Set
+# COSMOS_OPENH_DEBUG_INIT=0 to silence once the issue is understood.
+COSMOS_OPENH_DEBUG_INIT_ENV = "COSMOS_OPENH_DEBUG_INIT"
+
+
+def _debug_init_enabled() -> bool:
+    return os.environ.get(COSMOS_OPENH_DEBUG_INIT_ENV, "1").strip() not in ("0", "false", "False", "")
+
+
+def _dbg(msg: str) -> None:
+    """Timestamped, rank+PID-tagged debug print (flushed) for hang tracing."""
+    if not _debug_init_enabled():
+        return
+    import datetime as _dt
+    import os as _os
+
+    ts = _dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[{ts}][DBG]{_get_rank_prefix()}[pid {_os.getpid()}] {msg}", flush=True)
+
+
 def _is_cmr_versius_data(dataset_path: Path, verbose: bool = True) -> bool:
     """Check if dataset is CMR Versius by looking for hapticengaged keys in modality.json.
 
@@ -394,6 +420,7 @@ class LeRobotSingleDataset(Dataset):
 
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
+        _dbg(f"LeRobotSingleDataset.__init__ START leaf={self._dataset_name!r} ({dataset_path})")
 
         # Resolve modality filename: explicit > CMR-specific > default
         if modality_filename is not None:
@@ -439,6 +466,7 @@ class LeRobotSingleDataset(Dataset):
 
         # Check if the dataset is valid
         self._check_integrity()
+        _dbg(f"LeRobotSingleDataset.__init__ DONE  leaf={self._dataset_name!r} ({len(self._all_steps):,} steps)")
 
     @property
     def dataset_path(self) -> Path:
@@ -1246,6 +1274,17 @@ class LeRobotSingleDataset(Dataset):
         Returns:
             dict: The data for the step.
         """
+        # Trace the FIRST few __getitem__ calls per process to pinpoint a
+        # first-batch hang (the 6-node pre-warm blocked here). After a few we go
+        # quiet to avoid per-step spam; toggle via COSMOS_OPENH_DEBUG_INIT.
+        _n = getattr(self, "_dbg_getitem_count", 0)
+        if _n < 3:
+            self._dbg_getitem_count = _n + 1
+            _dbg(f"__getitem__ ENTER leaf={self.dataset_name!r} index={index} (call #{_n + 1})")
+            trajectory_id, base_index = self.all_steps[index]
+            out = self.transforms(self.get_step_data(trajectory_id, base_index))
+            _dbg(f"__getitem__ EXIT  leaf={self.dataset_name!r} index={index} (call #{_n + 1})")
+            return out
         trajectory_id, base_index = self.all_steps[index]
         return self.transforms(self.get_step_data(trajectory_id, base_index))
 
@@ -1477,21 +1516,34 @@ class LeRobotSingleDataset(Dataset):
         # BUGFIX FOR OPEN-H DATASETS WITH BROKEN TIMESTAMPs, 3/9/2026
         # #############################################################################
 
+        # Trace the FIRST few decodes per process: this is the suspected
+        # first-batch hang point (cold-Lustre video decode in the pre-warm
+        # fetch). Toggle via COSMOS_OPENH_DEBUG_INIT.
+        _vn = getattr(self, "_dbg_decode_count", 0)
+        _trace_decode = _vn < 3
+        if _trace_decode:
+            self._dbg_decode_count = _vn + 1
+            _dbg(f"get_video DECODE START leaf={self.dataset_name!r} backend={self.video_backend} path={video_path.as_posix()}")
         try:
-            return get_frames_by_timestamps(
+            out = get_frames_by_timestamps(
                 video_path.as_posix(),
                 video_timestamp,
                 video_backend=self.video_backend,
                 video_backend_kwargs=self.video_backend_kwargs,
             )
-        except Exception:
+        except Exception as _e:
+            if _trace_decode:
+                _dbg(f"get_video DECODE RETRY leaf={self.dataset_name!r} after error: {type(_e).__name__}: {_e}")
             self.video_backend = "torchvision_av"
-            return get_frames_by_timestamps(
+            out = get_frames_by_timestamps(
                 video_path.as_posix(),
                 video_timestamp,
                 video_backend=self.video_backend,
                 video_backend_kwargs=self.video_backend_kwargs,
             )
+        if _trace_decode:
+            _dbg(f"get_video DECODE DONE  leaf={self.dataset_name!r} frames={getattr(out, 'shape', None)}")
+        return out
 
     def get_state_or_action(
         self,

@@ -71,6 +71,24 @@ _OPEN_H_RESOLUTION = "480"
 _OPEN_H_NUM_FRAMES = 13
 
 
+def _openh_worker_init_fn(worker_id: int) -> None:
+    """DataLoader worker startup marker (hang tracing).
+
+    Top-level (picklable) so it survives fork/spawn. Prints a timestamped,
+    PID-tagged line as each worker starts, so the next 6-node run shows whether
+    workers spawn at all and how fast (vs. the prior hang where the first-batch
+    fetch blocked). Gated by COSMOS_OPENH_DEBUG_INIT (default on). Cheap; no CUDA.
+    """
+    import datetime
+    import os
+
+    if os.environ.get("COSMOS_OPENH_DEBUG_INIT", "1").strip() in ("0", "false", "False", ""):
+        return
+    ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    rank = os.environ.get("RANK", os.environ.get("SLURM_PROCID", "?"))
+    print(f"[{ts}][DBG][rank{rank}][pid {os.getpid()}] DataLoader worker {worker_id} STARTED", flush=True)
+
+
 action_fdm_open_h_sft_nano = LazyDict(
     dict(
         defaults=[
@@ -246,6 +264,27 @@ action_fdm_open_h_sft_nano = LazyDict(
                 persistent_workers=True,
                 pin_memory=True,
                 prefetch_factor=4,
+                # multiprocessing_context="fork", NOT the default "spawn".
+                #
+                # WHY: with spawn, the dataloader pre-warm
+                # (joint_dataloader._prewarm_dataloaders -> next(dl_iter)) starts
+                # workers that EACH RE-CONSTRUCT the whole dataset from scratch.
+                # For this 36-leaf mixture that re-runs all 36 LeRobot leaf inits
+                # (metadata + episodes + step-enumeration + CMR filter) PER WORKER.
+                # At 6 nodes that is ~4 workers x 48 ranks = ~192 procs x 36 leaves
+                # hammering COLD Lustre at once -> the non-master ranks hung in the
+                # first-batch fetch and never reached the pre-warm dist.barrier(),
+                # which then timed out (root cause of the 5518776 / 5519285 crashes).
+                # With FORK, workers inherit the parent's already-built datasets via
+                # copy-on-write -> worker start is instant, NO re-construction, and
+                # prefetch (num_workers>0) is preserved (unlike the num_workers=0
+                # band-aid, which would serialize decode for ALL of training).
+                # Fork is safe here: DataLoader workers are CPU-only (video decode),
+                # they do not touch CUDA, and pre-warm runs before the train loop.
+                # The colleague's single-manifest dataset re-inits cheaply under
+                # spawn, so he never needed this; our 36-leaf loader does.
+                multiprocessing_context="fork",
+                worker_init_fn=_openh_worker_init_fn,
                 sampler=None,
                 datasets=dict(
                     open_h=dict(
