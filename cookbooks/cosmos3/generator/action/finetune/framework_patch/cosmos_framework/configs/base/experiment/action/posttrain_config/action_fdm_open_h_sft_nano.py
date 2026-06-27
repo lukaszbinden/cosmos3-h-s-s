@@ -311,8 +311,16 @@ action_fdm_open_h_sft_nano = LazyDict(
 action_fdm_open_h_sft_nano["model"]["config"]["max_action_dim"] = _OPEN_H_MAX_ACTION_DIM
 # 480 tier (officially pretrained); pixel-aligned with the Open-H mixture.
 action_fdm_open_h_sft_nano["model"]["config"]["resolution"] = _OPEN_H_RESOLUTION
-# Uncap packed-sequence length (mirror cosmos3-internal max_num_tokens_after_packing=-1).
-action_fdm_open_h_sft_nano["model"]["config"]["max_num_tokens_after_packing"] = -1
+# Packed-sequence token cap. KEEP the NANO default (45056) -- do NOT set -1.
+#
+# -1 (uncapped, copied from action_policy_droid_nano) let a packed batch of
+# max_samples_per_batch=64 at 480-res/13-frame balloon past 80GB in the backward
+# (job 5523406 OOM'd allocating a 2.3GiB activation at 74GiB used, in the
+# inductor-compiled graph). The colleague's working 48-GPU surgical run keeps the
+# NANO default 45056 (max_num_tokens_after_packing=45056), which bounds per-batch
+# activation memory; max_samples_per_batch=64 then acts as an upper sample bound.
+# NANO_MODEL_CONFIG already sets 45056, so we simply DON'T override it here.
+# (If you must change it, match the dataloader: a larger cap needs more VRAM.)
 # 480 tier needs a larger VAE-latent side budget than the NANO 720-policy default.
 action_fdm_open_h_sft_nano["model"]["config"]["diffusion_expert_config"][
     "max_vae_latent_side_after_patchify"
