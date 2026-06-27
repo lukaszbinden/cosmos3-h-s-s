@@ -117,36 +117,31 @@ action_fdm_open_h_sft_nano = LazyDict(
                 "llm2action",
                 "action_modality_embed",
             ],
-            # Peak LR = 5.0e-5 (base/shared weights).
+            # Peak LR = 3.0e-5 (base/shared weights).
             #
-            # Anchored on THIS framework's own action-posttrain recipe
-            # (cosmos_framework .../action/posttrain_config/action_policy_droid_nano.py),
-            # which is the closest analog (same framework, same Nano model, same
-            # action-conditioning heads + identical 5x head multiplier). It pins:
-            #     lr = 2.0e-4  "for the 8192 global batch"
-            # and documents max_samples_per_batch as PER-RANK, so
-            # global_batch = max_samples_per_batch x world_size.
+            # NOTE: an earlier 5.0e-5 was derived by linear-scaling the droid
+            # action recipe (2.0e-4 @ global batch 8192) to an assumed effective
+            # batch of 64 x 48 = 3072 samples. That derivation NO LONGER HOLDS:
+            # we switched to TOKEN packing (max_sequence_length=45056,
+            # max_samples_per_batch=None) to fix the OOM, so samples-per-batch is
+            # now variable and much smaller than 64 -- the "3072" premise is dead.
             #
-            # Our run: max_samples_per_batch=64 (per rank) x 48 GPUs = global
-            # batch 3072. Linear-scaling the droid anchor to our batch:
-            #     2.0e-4 x (3072 / 8192) = 7.5e-5.
-            # We then discount ~30% -> 5.0e-5 for the warm-start: we resume from
-            # the 54D *surgical* 8k checkpoint (not the bare Cosmos3-Nano base),
-            # so the shared tower/diffusion-expert weights are ALREADY adapted to
-            # surgical FD. A gentler base LR avoids perturbing those inherited
-            # features early while staying in the regime the framework expects
-            # for action SFT (notably HIGHER than the prior 2.0e-5 guess, which
-            # was anchored on the internal recipe's per-GPU batch assumption that
-            # this framework's per-rank batching does not match).
-            # Override via TOML (optimizer.lr=...) if throughput/loss says otherwise.
-            lr=5.0e-05,
+            # Reference point: the sean-cosmos3_surgical_fd run uses this SAME
+            # token-batched (45056) 48-GPU warm-started regime at lr=2.0e-5 (with
+            # NO head multiplier). That's his initial-run value, not a tuned/proven
+            # optimum. We pick 3.0e-5: modestly above his 2.0e-5 to account for our
+            # larger, more diverse 36-leaf mixture, while staying conservative for
+            # the 54D surgical warm-start (shared tower already adapted). Override
+            # via TOML (optimizer.lr=...) if loss/throughput says otherwise.
+            lr=3.0e-05,
             lr_multipliers={
-                # Action-projection heads re-init fresh (base/54D ckpt had a
+                # Action-projection heads re-init fresh (the 54D ckpt had a
                 # different max_action_dim; keys_to_skip_loading drops them, so
-                # they start from scratch at 44D). 5x is the SAME multiplier the
-                # framework's droid action recipe uses; here it also lets the
-                # fresh 44D heads catch up to the already-surgical tower.
-                # 5x * 5.0e-5 = 2.5e-4 effective on the heads (~the droid base LR).
+                # they start from scratch at 44D). The 5x multiplier lets these
+                # fresh 44D heads catch up to the already-surgical (warm-started)
+                # tower -- justified independent of the base LR (the colleague uses
+                # no multiplier, but he warm-starts heads of matching dim; ours are
+                # brand new). 5x * 3.0e-5 = 1.5e-4 effective on the heads.
                 "action2llm": 5.0,
                 "llm2action": 5.0,
                 "action_modality_embed": 5.0,
