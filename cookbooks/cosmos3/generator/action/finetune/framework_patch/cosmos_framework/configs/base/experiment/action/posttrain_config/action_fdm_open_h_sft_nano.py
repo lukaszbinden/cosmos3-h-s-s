@@ -71,24 +71,6 @@ _OPEN_H_RESOLUTION = "480"
 _OPEN_H_NUM_FRAMES = 13
 
 
-def _openh_worker_init_fn(worker_id: int) -> None:
-    """DataLoader worker startup marker (hang tracing).
-
-    Top-level (picklable) so it survives fork/spawn. Prints a timestamped,
-    PID-tagged line as each worker starts, so the next 6-node run shows whether
-    workers spawn at all and how fast (vs. the prior hang where the first-batch
-    fetch blocked). Gated by COSMOS_OPENH_DEBUG_INIT (default on). Cheap; no CUDA.
-    """
-    import datetime
-    import os
-
-    if os.environ.get("COSMOS_OPENH_DEBUG_INIT", "1").strip() in ("0", "false", "False", ""):
-        return
-    ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    rank = os.environ.get("RANK", os.environ.get("SLURM_PROCID", "?"))
-    print(f"[{ts}][DBG][rank{rank}][pid {os.getpid()}] DataLoader worker {worker_id} STARTED", flush=True)
-
-
 action_fdm_open_h_sft_nano = LazyDict(
     dict(
         defaults=[
@@ -260,31 +242,30 @@ action_fdm_open_h_sft_nano = LazyDict(
             dataloader=L(RankPartitionedDataLoader)(
                 batch_size=1,
                 in_order=False,
-                num_workers=4,
-                persistent_workers=True,
+                # num_workers=0 (decode INLINE on the main process). This is the
+                # only worker setting that survives 6-node startup. The two
+                # alternatives BOTH hang at multi-node pre-warm:
+                #   * spawn (num_workers>0, the default): each worker RE-CONSTRUCTS
+                #     all 36 LeRobot leaves from scratch -> ~4 workers x 48 ranks =
+                #     ~192 procs x 36 cold-Lustre leaf inits -> hang (jobs 5518776,
+                #     5519285: only node-0 ranks reached the barrier).
+                #   * fork (multiprocessing_context="fork"): workers inherit the
+                #     built datasets (no rebuild) BUT classic fork-after-threads
+                #     DEADLOCK -- the 36-leaf numpy/BLAS/libav init leaves live
+                #     threads holding locks at fork(); children inherit locked
+                #     mutexes and hang on first numpy/decode (job 5522818: all 48
+                #     ranks' workers STARTED, but the 39 non-master workers ran 0
+                #     __getitem__ -> deadlocked). This is why torch defaults to spawn.
+                # num_workers=0 has no worker procs at all -> no rebuild, no fork
+                # deadlock; the MAIN-process build provably works (1-node smoke
+                # trained to completion; every run's node 0 finishes). Trade-off:
+                # inline decode (no prefetch overlap) costs some throughput for the
+                # whole run. Revisit with a cheap-init dataset (lazy per-leaf /
+                # manifest) + spawn if throughput becomes the bottleneck.
+                num_workers=0,
+                persistent_workers=False,  # must be False when num_workers=0
                 pin_memory=True,
-                prefetch_factor=4,
-                # multiprocessing_context="fork", NOT the default "spawn".
-                #
-                # WHY: with spawn, the dataloader pre-warm
-                # (joint_dataloader._prewarm_dataloaders -> next(dl_iter)) starts
-                # workers that EACH RE-CONSTRUCT the whole dataset from scratch.
-                # For this 36-leaf mixture that re-runs all 36 LeRobot leaf inits
-                # (metadata + episodes + step-enumeration + CMR filter) PER WORKER.
-                # At 6 nodes that is ~4 workers x 48 ranks = ~192 procs x 36 leaves
-                # hammering COLD Lustre at once -> the non-master ranks hung in the
-                # first-batch fetch and never reached the pre-warm dist.barrier(),
-                # which then timed out (root cause of the 5518776 / 5519285 crashes).
-                # With FORK, workers inherit the parent's already-built datasets via
-                # copy-on-write -> worker start is instant, NO re-construction, and
-                # prefetch (num_workers>0) is preserved (unlike the num_workers=0
-                # band-aid, which would serialize decode for ALL of training).
-                # Fork is safe here: DataLoader workers are CPU-only (video decode),
-                # they do not touch CUDA, and pre-warm runs before the train loop.
-                # The colleague's single-manifest dataset re-inits cheaply under
-                # spawn, so he never needed this; our 36-leaf loader does.
-                multiprocessing_context="fork",
-                worker_init_fn=_openh_worker_init_fn,
+                prefetch_factor=None,  # must be None when num_workers=0
                 sampler=None,
                 datasets=dict(
                     open_h=dict(
