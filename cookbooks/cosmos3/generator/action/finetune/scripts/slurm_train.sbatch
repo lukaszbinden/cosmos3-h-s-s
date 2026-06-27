@@ -47,12 +47,27 @@
 set -euo pipefail
 export TMPDIR=/tmp
 
-# Repo root = 6 levels above scripts/ (.../cookbooks/cosmos3/generator/action/finetune/scripts).
-_SBATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$_SBATCH_DIR/../../../../../.." && pwd)"
-# Default WORKSPACE is the repo root (framework checkout at packages/cosmos3,
-# env.sh at the root; all gitignored). Override WORKSPACE to relocate.
-WORKSPACE="${WORKSPACE:-$REPO_ROOT}"
+# Resolve WORKSPACE (repo root: framework checkout at packages/cosmos3, env.sh at
+# the root; all gitignored). Order of preference:
+#   1. $WORKSPACE from the environment (set by sourcing env.sh before sbatch, and
+#      propagated via --export=ALL) — this is how prior runs resolved it.
+#   2. $SLURM_SUBMIT_DIR (the dir you ran `sbatch` from) if it contains env.sh.
+# Do NOT derive from ${BASH_SOURCE[0]}: under SLURM the script body runs from a
+# COPY (e.g. /var/spool/slurm/d/jobNNN/slurm_script), so BASH_SOURCE-relative
+# path math walks past '/' and yields '' or '/', making `source "$WORKSPACE/env.sh"`
+# become `source "//env.sh"` -> "No such file or directory" (the 5522803 failure).
+if [[ -z "${WORKSPACE:-}" ]]; then
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "$SLURM_SUBMIT_DIR/env.sh" ]]; then
+    WORKSPACE="$SLURM_SUBMIT_DIR"
+  fi
+fi
+if [[ -z "${WORKSPACE:-}" || ! -f "$WORKSPACE/env.sh" ]]; then
+  echo "FATAL: cannot locate WORKSPACE/env.sh." >&2
+  echo "  WORKSPACE='${WORKSPACE:-}'  SLURM_SUBMIT_DIR='${SLURM_SUBMIT_DIR:-}'" >&2
+  echo "  Fix: 'source env.sh' (sets WORKSPACE) before sbatch, OR submit from the" >&2
+  echo "  repo root (so SLURM_SUBMIT_DIR has env.sh), OR pass WORKSPACE=... explicitly." >&2
+  exit 64
+fi
 source "$WORKSPACE/env.sh"
 if [[ -f "$WORKSPACE/env.private.sh" ]]; then
   source "$WORKSPACE/env.private.sh"
