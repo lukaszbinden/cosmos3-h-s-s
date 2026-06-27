@@ -151,7 +151,16 @@ action_fdm_open_h_sft_nano = LazyDict(
                 "llm2action": 5.0,
                 "action_modality_embed": 5.0,
             },
-            optimizer_type="FusedAdam",
+            # AdamW (torch-native, fused=True above), NOT apex FusedAdam.
+            #
+            # FusedAdam.step() threw a CUDA illegal memory access right after iter 1
+            # completed (job 5523441: iter 1 logged finite losses ~1.0-1.8, then IMA
+            # in fused_adam.py:160 on the first optimizer step). apex FusedAdam is a
+            # known source of IMAs with FSDP DTensor-sharded params (the capturable
+            # path). The colleague's proven 48-GPU surgical run uses optimizer_type=
+            # "AdamW" with fused=True (PyTorch's native fused AdamW, which IS
+            # FSDP/DTensor-safe). Match that.
+            optimizer_type="AdamW",
             weight_decay=0.1,
         ),
         scheduler=dict(
