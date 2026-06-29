@@ -79,7 +79,11 @@ def _build_val_dataloader(config: Any, *, num_frames: int, resolution: Any, max_
     iterable_shuffle=False (deterministic, in-order eval). Token packing matches
     training (max_sequence_length=45056) so the model sees the same shapes.
     """
-    tok_cfg = config.model.config.tokenizer
+    # The action transform's TEXT tokenizer must be the VLM tokenizer (has
+    # tokenize_text), NOT model.config.tokenizer (that's the Wan VAE -> caused
+    # AttributeError 'Wan2pt2VAEInterface' has no 'tokenize_text', job 5529592).
+    # The training dataloader uses "${model.config.vlm_config.tokenizer}"; match it.
+    tok_cfg = config.model.config.vlm_config.tokenizer
     val_dl = L(PackingDataLoader)(
         audio_sample_rate=48000,
         dataset_name="action_open_h_val",
