@@ -61,6 +61,11 @@ EVAL_SAMPLE_ITERATION="${EVAL_SAMPLE_ITERATION:-1000000}"
 SUBMIT_SLEEP="${SUBMIT_SLEEP:-2}"
 DRY_RUN="${DRY_RUN:-0}"
 ONLY_EXISTING="${ONLY_EXISTING:-1}"
+# SEQUENTIAL=1 (default): run evals ONE AT A TIME via `sbatch --wait`. This is
+# REQUIRED because every eval logs FDS to the SAME wandb run; concurrent writers
+# collide on the run's internal step and lose points. Set 0 only if you don't
+# care about the wandb curve (videos/json still produced).
+SEQUENTIAL="${SEQUENTIAL:-1}"
 
 # --- Build the list of iterations to evaluate ------------------------------
 iters=()
@@ -110,9 +115,19 @@ for it in "${iters[@]}"; do
     envvars+=(EVAL_SAMPLE_ITERATION="$EVAL_SAMPLE_ITERATION")
   fi
   if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry-run] ${envvars[*]} sbatch $EVAL_SBATCH"
+    _wait_flag=""; [[ "$SEQUENTIAL" == "1" ]] && _wait_flag="--wait "
+    echo "[dry-run] ${envvars[*]} sbatch ${_wait_flag}$EVAL_SBATCH"
+  elif [[ "$SEQUENTIAL" == "1" ]]; then
+    # SEQUENTIAL: block until THIS eval finishes before submitting the next.
+    # REQUIRED for the wandb FDS push: all evals resume the SAME wandb run; two
+    # concurrent writers to one run collide on the internal step and silently
+    # lose points (run2: all 4 logged but only 1k/2k survived because the jobs
+    # ran simultaneously). One-at-a-time + ascending iters -> every point sticks.
+    echo "[submit+wait] FDS eval $name"
+    env "${envvars[@]}" sbatch --wait "$EVAL_SBATCH" || echo "[warn] sbatch failed for $name"
+    submitted=$((submitted + 1))
   else
-    echo "[submit] FDS eval $name"
+    echo "[submit] FDS eval $name (CONCURRENT -- WARNING: wandb points may collide; set SEQUENTIAL=1)"
     env "${envvars[@]}" sbatch "$EVAL_SBATCH" || echo "[warn] sbatch failed for $name"
     submitted=$((submitted + 1))
     sleep "$SUBMIT_SLEEP"

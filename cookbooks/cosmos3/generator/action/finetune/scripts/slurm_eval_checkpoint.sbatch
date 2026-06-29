@@ -142,6 +142,13 @@ fi
 # WANDB_MODE here drives the FDS push (online to reach the training run); the
 # in-script config still forces job.wandb_mode=offline so the SAMPLER doesn't
 # open its own run -- only the explicit FDS wandb.init(resume) logs.
+#
+# FDS clip count = EVAL_BATCHES x EVAL_N_VIZ_SAMPLE (default 8 x 2 = 16 clips).
+# To reduce FDS noise, raise EVAL_BATCHES (each batch is a DIFFERENT episode ->
+# more diversity) in preference to EVAL_N_VIZ_SAMPLE (more samples of the same
+# batch's episodes, and it also enlarges the comparison-video grid). Each clip is
+# one diffusion sample (~3-7s warm), so 16 clips ~= 1-2 min of sampling per eval.
+# e.g. EVAL_BATCHES=16 -> 32 clips for an even smoother curve.
 srun --ntasks=1 --ntasks-per-node=1 \
   --container-image="$CONTAINER_IMAGE" \
   --container-mounts="$MOUNTS" \
@@ -154,7 +161,7 @@ srun --ntasks=1 --ntasks-per-node=1 \
   --iteration="$CHECKPOINT_ITER" \
   --output-dir="$EVAL_OUTPUT_DIR" \
   --num-frames="${EVAL_NUM_FRAMES:-13}" \
-  --batches="${EVAL_BATCHES:-2}" \
+  --batches="${EVAL_BATCHES:-8}" \
   --n-viz-sample="${EVAL_N_VIZ_SAMPLE:-2}" \
   --num-sampling-step="${EVAL_NUM_SAMPLING_STEP:-16}" \
   --guidance="${EVAL_GUIDANCE:-1.5}" \
