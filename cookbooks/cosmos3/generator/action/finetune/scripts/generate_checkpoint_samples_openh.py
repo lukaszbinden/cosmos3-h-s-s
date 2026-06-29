@@ -220,6 +220,14 @@ def main() -> None:
         f"checkpoint.load_path={args.checkpoint_path}",
         "checkpoint.load_training_state=false",
         "checkpoint.strict_resume=false",
+        # MODEL-ONLY load. The checkpointer treats a run dir containing
+        # latest_checkpoint.txt as a same-run RESUME and then tries to load all of
+        # [model, optim, scheduler, trainer, dataloader] regardless of
+        # load_training_state (dcp.py:433-437). We pass optimizer=None for eval, so
+        # loading "optim" does optimizer.state_dict() on None -> AttributeError
+        # (job 5529588). keys_not_to_resume filters those out (dcp.py:477-480), so
+        # only the model weights load.
+        'checkpoint.keys_not_to_resume=["optim","scheduler","trainer","dataloader"]',
         "job.wandb_mode=offline",
         "model.config.ema.enabled=false",
         "model.config.compile.enabled=false",
