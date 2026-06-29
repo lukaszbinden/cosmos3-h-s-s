@@ -319,7 +319,69 @@ action_fdm_open_h_sft_nano = LazyDict(
                 ),
             ),
         ),
-        dataloader_val=None,
+        # Held-out TEST-split loader (the 0.02 the gr00t loader reserves), mirroring
+        # dataloader_train but data_split="test", cfg_dropout_rate=0.0,
+        # iterable_shuffle=False + in_order=True (deterministic), fewer workers.
+        #
+        # Defined for REUSE by the out-of-band eval (scripts/slurm_eval_checkpoint.sbatch
+        # builds its own test-split loader; this also documents the split intent).
+        #
+        # !!! DO NOT set trainer.run_validation=true with this model. !!!
+        # OmniMoTModel.validation_step is a no-op (`pass` -> returns None), and the
+        # trainer's validate() does `output_batch, loss = model.validation_step(...)`,
+        # so enabling in-training validation would crash on unpacking None. There is
+        # NO scalar "val metric" implemented for this model (no FDS/PSNR/etc.; only
+        # the rectified-flow/flow-matching training loss exists, and validation_step
+        # doesn't compute it). The colleague's run didn't implement it either --
+        # evaluation is the out-of-band video sampler. run_validation stays False.
+        dataloader_val=L(PackingDataLoader)(
+            audio_sample_rate=48000,
+            dataset_name="action_open_h_val",
+            max_samples_per_batch=None,
+            max_sequence_length=45056,
+            patch_spatial=2,
+            sound_latent_fps=0,
+            tokenizer_spatial_compression_factor=16,
+            tokenizer_temporal_compression_factor=4,
+            dataloader=L(RankPartitionedDataLoader)(
+                batch_size=1,
+                in_order=True,
+                num_workers=2,
+                persistent_workers=True,
+                pin_memory=True,
+                prefetch_factor=2,
+                sampler=None,
+                datasets=dict(
+                    open_h=dict(
+                        ratio=1,
+                        dataset=L(get_action_openh_sft_dataset)(
+                            base_path="${oc.env:DATASET_PATH,null}",
+                            num_frames=_OPEN_H_NUM_FRAMES,
+                            data_split="test",  # held-out 0.02 split (vs train above)
+                            mode="forward_dynamics",
+                            viewpoint="third_person_view",
+                            test_split_ratio=0.02,
+                            default_storage_fps=30.0,
+                            resolution=_OPEN_H_RESOLUTION,
+                            max_action_dim=_OPEN_H_MAX_ACTION_DIM,
+                            action_channel_masking=True,
+                            cfg_dropout_rate=0.0,  # no CFG dropout at eval
+                            keep_aspect_ratio=True,
+                            caption_key="ai_caption",
+                            video_temporal_downsample=4,
+                            append_duration_fps_timestamps=True,
+                            append_resolution_info=True,
+                            append_idle_frames=False,
+                            idle_frames_dropout=0.0,
+                            format_prompt_as_json=False,
+                            iterable_shuffle=False,  # deterministic eval order
+                            episode_shuffle_seed=42,
+                            tokenizer_config="${model.config.vlm_config.tokenizer}",
+                        ),
+                    ),
+                ),
+            ),
+        ),
         upload_reproducible_setup=False,
     ),
     flags={"allow_objects": True},

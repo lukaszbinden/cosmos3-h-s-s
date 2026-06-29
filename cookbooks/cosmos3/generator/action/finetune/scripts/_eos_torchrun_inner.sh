@@ -82,10 +82,13 @@ except Exception as exc:
     raise
 PY
 
+# nproc per node: defaults to 8 (the 8-GPU training nodes); the out-of-band
+# 1-GPU eval (slurm_eval_checkpoint.sbatch) sets NPROC_PER_NODE=1. Training is
+# unchanged (default 8).
 exec torchrun \
     --nnodes="$SLURM_NNODES" \
     --node_rank="$SLURM_NODEID" \
     --master_addr="$MASTER_ADDR" \
     --master_port="$MASTER_PORT" \
-    --nproc_per_node=8 \
+    --nproc_per_node="${NPROC_PER_NODE:-8}" \
     "$@"
