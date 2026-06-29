@@ -27,7 +27,7 @@ experiment   = "action_fdm_open_h_sft_nano"
 project      = "cosmos3_action_surgical"
 group        = "action_open_h"
 name         = "action_fdm_open_h_sft_nano"
-wandb_mode   = "offline"
+wandb_mode   = "online"
 
 [model]
 precision = "bfloat16"

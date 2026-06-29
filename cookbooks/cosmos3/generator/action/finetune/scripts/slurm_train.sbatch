@@ -94,10 +94,15 @@ WANDB_MODE="${WANDB_MODE:-offline}"
 mkdir -p "$WORKSPACE/logs" "$OUTPUTS" "$WORKSPACE/.cache" "$WORKSPACE/.uv-cache" "$WORKSPACE/.uv-python" "$HOST_HOME/.local/share/uv"
 
 # --- Startup banner + resume status ----------------------------------------
-# The run dir the trainer reads/writes (IMAGINAIRE_OUTPUT_ROOT=/outputs ->
-# $OUTPUTS; project/group/name from the TOML). Report whether this array task
-# will RESUME (latest_checkpoint.txt present) or COLD-START from the base ckpt.
-_RUN_DIR="$OUTPUTS/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano"
+# Report whether this array task will RESUME (latest_checkpoint.txt present) or
+# COLD-START from the base ckpt. The run dir is rooted at the HOST
+# IMAGINAIRE_OUTPUT_ROOT that env.sh exports (checkpoints actually land there;
+# verified iter_* dirs under it), NOT $OUTPUTS. (Earlier this checked $OUTPUTS
+# and always mis-reported COLD-START even while the trainer correctly resumed
+# from $IMAGINAIRE_OUTPUT_ROOT.) Fall back to $OUTPUTS only if the env var is
+# somehow unset. project/group/name come from the experiment config.
+_CKPT_ROOT="${IMAGINAIRE_OUTPUT_ROOT:-$OUTPUTS}"
+_RUN_DIR="$_CKPT_ROOT/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano"
 _LATEST_CKPT_FILE="$_RUN_DIR/checkpoints/latest_checkpoint.txt"
 echo "===== SLURM TRAIN START $(date -Is) ====="
 echo "  job_id=${SLURM_JOB_ID:-?}  array_job=${SLURM_ARRAY_JOB_ID:-NA}  array_task=${SLURM_ARRAY_TASK_ID:-NA}"
@@ -160,7 +165,7 @@ srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
   --container-image="$CONTAINER_IMAGE" \
   --container-mounts="$MOUNTS" \
   --container-workdir=/workspace \
-  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh" \
+  --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-}",DATASET_PATH="${DATASET_PATH:-}",COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-}",COSMOS_OPENH_DEBUG_INIT="${COSMOS_OPENH_DEBUG_INIT:-0}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh" \
   "$COOKBOOK_MOUNT/scripts/_eos_torchrun_inner.sh" \
   -m cosmos_framework.scripts.train \
   --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_fdm_open_h_sft_nano.toml" \
