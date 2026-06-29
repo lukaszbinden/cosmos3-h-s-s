@@ -156,6 +156,17 @@ MOUNTS="$MOUNTS,$WORKSPACE/.uv-cache:$WORKSPACE/.uv-cache"
 MOUNTS="$MOUNTS,$WORKSPACE/.uv-python:$WORKSPACE/.uv-python"
 MOUNTS="$MOUNTS,$HOST_HOME/.local/share/uv:$HOST_HOME/.local/share/uv"
 
+# W&B auth: wandb runs INSIDE the container (whose $HOME is /root), so it looks
+# for /root/.netrc. Mount the host ~/.netrc there (read-only) so online logging
+# can authenticate without baking a token into env/git. Only mount if present
+# (an absent source path makes enroot fail). Requires WANDB_MODE=online (set via
+# env / the --export below); the TOML's wandb_mode is overridden by job.wandb_mode.
+if [[ -f "$HOST_HOME/.netrc" ]]; then
+  MOUNTS="$MOUNTS,$HOST_HOME/.netrc:/root/.netrc:ro"
+else
+  echo "WARN: $HOST_HOME/.netrc not found -> wandb online auth will fail; logging will be offline/anonymous." >&2
+fi
+
 # Pyxis warmup (pull image once).
 srun --container-image="$CONTAINER_IMAGE" bash -c 'echo pyxis-warmup-ok on $(hostname)' || true
 
