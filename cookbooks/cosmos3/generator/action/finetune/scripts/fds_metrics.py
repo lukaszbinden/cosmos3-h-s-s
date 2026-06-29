@@ -123,5 +123,24 @@ def video_tensor_to_uint8(video) -> np.ndarray:
     return arr
 
 
+def resize_video_uint8(video: np.ndarray, target_hw: tuple[int, int]) -> np.ndarray:
+    """Resize a uint8 [T,H,W,C] video to target (H, W) with bilinear interpolation.
+
+    Used to match generated frames to the GT resolution before FDS (the model may
+    decode at a smaller spatial size than raw_state_vision, e.g. 288x512 gen vs
+    480x832 GT). Torch-based (no cv2 dependency).
+    """
+    import torch
+    import torch.nn.functional as F
+
+    th, tw = int(target_hw[0]), int(target_hw[1])
+    if video.shape[1] == th and video.shape[2] == tw:
+        return video
+    t = torch.from_numpy(video).permute(0, 3, 1, 2).float()  # [T,C,H,W]
+    t = F.interpolate(t, size=(th, tw), mode="bilinear", align_corners=False)
+    t = t.round().clamp(0, 255).to(torch.uint8)
+    return t.permute(0, 2, 3, 1).contiguous().numpy()  # [T,H,W,C]
+
+
 def ssim_available() -> bool:
     return _compute_ssim is not None

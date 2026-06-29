@@ -181,7 +181,7 @@ def _compute_fds_for_batch(model: Any, data_batch: dict[str, Any], *, guidance: 
     video (sample_vision_decoded) and the GT (data_clean.raw_state_vision), then
     runs compute_frame_decay on each. Returns a list of FDS dicts (one per sample).
     """
-    from fds_metrics import compute_frame_decay, video_tensor_to_uint8
+    from fds_metrics import compute_frame_decay, resize_video_uint8, video_tensor_to_uint8
     from cosmos_framework.utils.vfm.data_utils import slice_data_batch
 
     # CRITICAL: slice the packed batch to n samples FIRST (like EveryNDrawSample.sample
@@ -209,6 +209,11 @@ def _compute_fds_for_batch(model: Any, data_batch: dict[str, Any], *, guidance: 
     for i in range(min(n, len(decoded), len(raw_gt))):
         gen_u8 = video_tensor_to_uint8(decoded[i])
         gt_u8 = video_tensor_to_uint8(raw_gt[i])
+        # The model may decode generated frames at a smaller spatial size than the
+        # GT (e.g. 288x512 gen vs 480x832 GT) -> resize generated to GT resolution
+        # so the per-frame L1/SSIM are element-wise comparable (GT is the anchor).
+        if gen_u8.shape[1:3] != gt_u8.shape[1:3]:
+            gen_u8 = resize_video_uint8(gen_u8, (gt_u8.shape[1], gt_u8.shape[2]))
         out.append(compute_frame_decay(gt_u8, gen_u8))
     return out
 
