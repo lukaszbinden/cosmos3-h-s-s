@@ -379,21 +379,29 @@ def main() -> None:
             vals = [float(d[key]) for d in all_fds if d.get(key) is not None and np.isfinite(d[key])]
             return float(np.mean(vals)) if vals else float("nan")
 
+        def _agg_chunk(chunk: str) -> float | None:
+            # Average a per-chunk L1 across clips, skipping NaN (a chunk is empty
+            # when the clip is shorter than that chunk -- e.g. 13-frame clips only
+            # fill early_c1, so mid/late are NaN). Returns None if no clip has it,
+            # so we OMIT the metric (avoids logging nan + the empty-slice warning).
+            vals = [
+                float(d["per_chunk"][chunk]["l1"])
+                for d in all_fds
+                if np.isfinite(d["per_chunk"][chunk]["l1"])
+            ]
+            return float(np.mean(vals)) if vals else None
+
         fds_summary = {
             "fds/mean_l1": _agg("mean_l1"),  # headline FDS (lower better)
             "fds/mean_ssim": _agg("mean_ssim"),  # structural sim (higher better)
             "fds/l1_slope": _agg("l1_slope"),  # decay across horizon
-            "fds/early_c1_l1": float(
-                np.nanmean([d["per_chunk"]["early_c1"]["l1"] for d in all_fds])
-            ),
-            "fds/mid_c2c3_l1": float(
-                np.nanmean([d["per_chunk"]["mid_c2c3"]["l1"] for d in all_fds])
-            ),
-            "fds/late_c4c6_l1": float(
-                np.nanmean([d["per_chunk"]["late_c4c6"]["l1"] for d in all_fds])
-            ),
             "fds/num_clips": len(all_fds),
         }
+        for _chunk, _key in (("early_c1", "fds/early_c1_l1"), ("mid_c2c3", "fds/mid_c2c3_l1"),
+                             ("late_c4c6", "fds/late_c4c6_l1")):
+            _v = _agg_chunk(_chunk)
+            if _v is not None:  # omit chunks with no frames (e.g. mid/late at 13-frame clips)
+                fds_summary[_key] = _v
         metadata["fds_summary"] = fds_summary
         if distributed.is_rank0():
             log.success(
@@ -413,8 +421,16 @@ def main() -> None:
 
 
 def _maybe_log_fds_to_wandb(args: Any, fds_summary: dict[str, float]) -> None:
-    """Log aggregated FDS to the SAME training wandb run (resume by id) at
-    step=checkpoint iteration, so FDS overlays the training loss curves.
+    """Log aggregated FDS to the SAME training wandb run (resume by id), plotted
+    against the CHECKPOINT ITERATION on its own x-axis.
+
+    IMPORTANT: we do NOT use wandb's global `step` for FDS. The training run is
+    already at a high global step (e.g. 4701), and wandb DROPS any log to a step
+    less than the current one ("Tried to log to step 1000 ... will be ignored",
+    job 5529950) -- which silently lost all backfilled (earlier-iter) FDS points.
+    Instead we define a custom step metric `fds/checkpoint_iter` and log FDS
+    against it, so points at any iteration (earlier OR later) are recorded and
+    plot correctly as fds/* vs fds/checkpoint_iter.
 
     No-op if --wandb-id-file is unset/missing or WANDB_MODE is offline/disabled.
     Best-effort: never raises into the eval (just warns).
@@ -438,7 +454,7 @@ def _maybe_log_fds_to_wandb(args: Any, fds_summary: dict[str, float]) -> None:
             return
         import wandb
 
-        run = wandb.init(
+        wandb.init(
             id=run_id,
             project=args.wandb_project,
             group=args.wandb_group,
@@ -446,10 +462,17 @@ def _maybe_log_fds_to_wandb(args: Any, fds_summary: dict[str, float]) -> None:
             resume="allow",
             mode="online",
         )
-        # step = checkpoint iteration -> FDS lands at the same x as the loss curve.
-        wandb.log({**fds_summary, "trainer/global_step": args.iteration}, step=int(args.iteration))
+        # Custom x-axis: FDS plotted vs the checkpoint iter (independent of the
+        # run's global step), so out-of-order / backfilled points are kept.
+        wandb.define_metric("fds/checkpoint_iter")
+        wandb.define_metric("fds/*", step_metric="fds/checkpoint_iter")
+        payload = dict(fds_summary)
+        payload["fds/checkpoint_iter"] = int(args.iteration)
+        # No step= -> wandb appends at the current internal step but the panels use
+        # fds/checkpoint_iter as the x-axis (so the value is NOT dropped).
+        wandb.log(payload)
         wandb.finish()
-        log.success(f"Logged FDS to wandb run {run_id} at step {args.iteration}.")
+        log.success(f"Logged FDS to wandb run {run_id} at fds/checkpoint_iter={args.iteration}.")
     except Exception as e:  # noqa: BLE001
         log.warning(f"FDS wandb push failed (non-fatal): {type(e).__name__}: {e}")
 
