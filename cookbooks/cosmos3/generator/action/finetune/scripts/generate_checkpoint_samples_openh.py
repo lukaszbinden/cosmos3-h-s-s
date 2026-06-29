@@ -182,10 +182,18 @@ def _compute_fds_for_batch(model: Any, data_batch: dict[str, Any], *, guidance: 
     runs compute_frame_decay on each. Returns a list of FDS dicts (one per sample).
     """
     from fds_metrics import compute_frame_decay, video_tensor_to_uint8
+    from cosmos_framework.utils.vfm.data_utils import slice_data_batch
+
+    # CRITICAL: slice the packed batch to n samples FIRST (like EveryNDrawSample.sample
+    # does). With token packing a "batch" holds many packed samples (e.g. 28), and
+    # generate_samples_from_batch derives n_sample from the batch and asserts
+    # len(seed) == that count. Slicing makes the batch hold exactly n -> the
+    # n-element seed matches (fixes "Seed list length 2 != number of samples 28").
+    data_batch = slice_data_batch(data_batch, start=0, limit=n_sample)
 
     data_clean = model.get_data_and_condition(data_batch)
     raw_gt = data_clean.raw_state_vision  # list of [1,C,T,H,W] (or [C,T,H,W]) in [-1,1]
-    n = min(n_sample, data_clean.batch_size)
+    n = data_clean.batch_size  # actual samples after slicing (<= n_sample)
 
     sample = model.generate_samples_from_batch(
         data_batch,
