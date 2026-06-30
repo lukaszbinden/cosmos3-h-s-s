@@ -233,18 +233,34 @@ def main() -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load the experiment, then force a light/isolated single-GPU eval config.
+    #
+    # CRITICAL job.name override: the checkpointer derives its load dir from
+    # job.path_local = $IMAGINAIRE_OUTPUT_ROOT/project/group/<job.name>/checkpoints
+    # and, if that dir has a latest_checkpoint.txt, takes the same-run RESUME branch
+    # which loads THAT latest checkpoint and IGNORES checkpoint.load_path
+    # (dcp.py:433-437). With the training job.name, every eval loaded the LIVE
+    # latest checkpoint instead of --checkpoint-path -> all evals in a wave got
+    # identical FDS (run3: 1k-4k all loaded iter_5100; 5k-7k all loaded iter_7000).
+    # Using a DISTINCT eval job.name points path_local at an empty dir (no
+    # latest_checkpoint.txt) -> the WARM-START branch fires -> load_path (the
+    # requested checkpoint) is honored. Made unique per iter for isolation.
+    eval_job_name = f"openh44d_eval_iter_{args.iteration:09d}"
     config_overrides = [
+        f"job.name={eval_job_name}",
         f"checkpoint.load_path={args.checkpoint_path}",
         "checkpoint.load_training_state=false",
         "checkpoint.strict_resume=false",
-        # MODEL-ONLY load. The checkpointer treats a run dir containing
-        # latest_checkpoint.txt as a same-run RESUME and then tries to load all of
-        # [model, optim, scheduler, trainer, dataloader] regardless of
-        # load_training_state (dcp.py:433-437). We pass optimizer=None for eval, so
-        # loading "optim" does optimizer.state_dict() on None -> AttributeError
-        # (job 5529588). keys_not_to_resume filters those out (dcp.py:477-480), so
-        # only the model weights load.
+        # Belt-and-suspenders: even on the warm-start path, only load model weights
+        # (optimizer=None at eval). keys_not_to_resume filters non-model keys
+        # (dcp.py:477-480) so a full-state checkpoint won't try optimizer.state_dict()
+        # on None (the original job 5529588 crash).
         'checkpoint.keys_not_to_resume=["optim","scheduler","trainer","dataloader"]',
+        # The distinct eval job.name makes this load take the WARM-START branch,
+        # which would otherwise apply keys_to_skip_loading (the 54D->44D skip list:
+        # net_ema/action2llm/llm2action/...). We are loading a 44D checkpoint into a
+        # 44D model and MUST load the TRAINED action heads -> clear the skip list so
+        # nothing is skipped (eval would otherwise use random action heads).
+        "checkpoint.keys_to_skip_loading=[]",
         "job.wandb_mode=offline",
         "model.config.ema.enabled=false",
         "model.config.compile.enabled=false",
