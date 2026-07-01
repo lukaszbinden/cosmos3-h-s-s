@@ -23,7 +23,7 @@
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=mm-C3-H-S-S-base
+#SBATCH --job-name=healthcareeng_holoscan-cosmos3.mm-C3-H-S-S-base
 # --- 4h-cap auto-chaining ---------------------------------------------------
 # EOS `batch` caps wall-time at ~4h, but a 20k-step run needs much longer. Use a
 # SLURM ARRAY that runs tasks SEQUENTIALLY (%1 = at most 1 concurrent), each ≤4h.

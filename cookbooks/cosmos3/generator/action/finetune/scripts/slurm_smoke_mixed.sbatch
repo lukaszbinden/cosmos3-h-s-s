@@ -19,7 +19,7 @@
 #SBATCH --time=00:40:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=mm-C3-H-S-S-base-smoke
+#SBATCH --job-name=healthcareeng_holoscan-cosmos3.mm-C3-H-S-S-base-smoke
 # Per-job log under logs/ (resolved at submit time relative to the submit CWD —
 # submit from the repo root, which has a gitignored logs/). %j = job id.
 #SBATCH --output=logs/mm-C3-H-S-S-base-smoke_%j.out
