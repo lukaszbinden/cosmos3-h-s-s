@@ -202,7 +202,13 @@ action_mixed_open_h_sft_nano = LazyDict(
         job=dict(
             project="cosmos3_action_surgical",
             group="action_open_h",
-            name="action_mixed_open_h_sft_nano",  # -> Cosmos-Surg-3-Base
+            # Run/output name = mm-C3-H-S-S-base (multi-mode C3-H-S-S base). Drives
+            # the W&B run name and the checkpoint run dir
+            # (.../action_open_h/mm-C3-H-S-S-base), distinct from the FD run's dir.
+            # NOTE: the Hydra EXPERIMENT key stays action_mixed_open_h_sft_nano
+            # (referenced by the TOML experiment= and apply_overlay registration);
+            # only this human/run name is mm-C3-H-S-S-base.
+            name="mm-C3-H-S-S-base",  # -> Cosmos-Surg-3-Base
             wandb_mode="disabled",  # real runs set wandb_mode via TOML/env
         ),
         model=dict(

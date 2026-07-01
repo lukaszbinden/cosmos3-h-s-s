@@ -24,10 +24,13 @@
 
 [job]
 task         = "vfm"
+# experiment = the Hydra config KEY (do not change; matches the registered module
+# + apply_overlay). name = the run/output name (mm-C3-H-S-S-base), which sets the
+# W&B run and the checkpoint run dir (.../action_open_h/mm-C3-H-S-S-base).
 experiment   = "action_mixed_open_h_sft_nano"
 project      = "cosmos3_action_surgical"
 group        = "action_open_h"
-name         = "action_mixed_open_h_sft_nano"
+name         = "mm-C3-H-S-S-base"
 wandb_mode   = "online"
 
 [model]

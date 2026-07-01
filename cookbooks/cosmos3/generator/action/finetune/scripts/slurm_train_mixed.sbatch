@@ -23,7 +23,7 @@
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_holoscan-cosmos3.openh44d.mixed
+#SBATCH --job-name=mm-C3-H-S-S-base
 # --- 4h-cap auto-chaining ---------------------------------------------------
 # EOS `batch` caps wall-time at ~4h, but a 20k-step run needs much longer. Use a
 # SLURM ARRAY that runs tasks SEQUENTIALLY (%1 = at most 1 concurrent), each ≤4h.
@@ -42,8 +42,8 @@
 # $WORKSPACE/logs (WORKSPACE defaults to the repo root). NOTE: SLURM resolves
 # this path at submit time relative to the submit CWD, so submit from the repo
 # root (or pass --chdir). The script also re-derives WORKSPACE below.
-#SBATCH --output=logs/openh44d_mixed_%A_%a.out
-#SBATCH --error=logs/openh44d_mixed_%A_%a.out
+#SBATCH --output=logs/mm-C3-H-S-S-base_%A_%a.out
+#SBATCH --error=logs/mm-C3-H-S-S-base_%A_%a.out
 
 set -euo pipefail
 export TMPDIR=/tmp
@@ -103,9 +103,10 @@ mkdir -p "$WORKSPACE/logs" "$OUTPUTS" "$WORKSPACE/.cache" "$WORKSPACE/.uv-cache"
 # from $IMAGINAIRE_OUTPUT_ROOT.) Fall back to $OUTPUTS only if the env var is
 # somehow unset. project/group/name come from the experiment config.
 _CKPT_ROOT="${IMAGINAIRE_OUTPUT_ROOT:-$OUTPUTS}"
-# Run dir = project/group/name from the MIXED experiment config (distinct from the
-# FD run's dir, so the two never collide / cross-resume).
-_RUN_DIR="$_CKPT_ROOT/cosmos3_action_surgical/action_open_h/action_mixed_open_h_sft_nano"
+# Run dir = project/group/name from the MIXED experiment config. name is
+# mm-C3-H-S-S-base (set in the toml/experiment), distinct from the FD run's dir
+# (action_fdm_open_h_sft_nano), so the two never collide / cross-resume.
+_RUN_DIR="$_CKPT_ROOT/cosmos3_action_surgical/action_open_h/mm-C3-H-S-S-base"
 _LATEST_CKPT_FILE="$_RUN_DIR/checkpoints/latest_checkpoint.txt"
 echo "===== SLURM TRAIN START $(date -Is) ====="
 echo "  job_id=${SLURM_JOB_ID:-?}  array_job=${SLURM_ARRAY_JOB_ID:-NA}  array_task=${SLURM_ARRAY_TASK_ID:-NA}"
@@ -116,7 +117,7 @@ if [[ -f "$_LATEST_CKPT_FILE" ]]; then
 else
   echo "  COLD-START: no latest_checkpoint.txt yet -> warm-starts from BASE_CHECKPOINT_PATH"
 fi
-echo "  log: $WORKSPACE/logs/openh44d_mixed_${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.out"
+echo "  log: $WORKSPACE/logs/mm-C3-H-S-S-base_${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.out"
 
 # --- Pre-flight: the two artifacts the run REQUIRES on the host ------------
 # Fail fast (before burning a 4-node allocation) with a clear message.

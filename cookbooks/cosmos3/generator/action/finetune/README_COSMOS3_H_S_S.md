@@ -490,10 +490,11 @@ sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_smoke_mixed.sba
 sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_train_mixed.sbatch  # 4-node run
 ```
 
-The mixed run writes to its own run dir
-(`.../action_open_h/action_mixed_open_h_sft_nano/`), so it never collides with
-the FD run. `apply_overlay.sh` registers both experiments; the same stats /
-filter-cache artifacts are reused (mode does not affect normalization stats).
+The mixed run's output/run name is **`mm-C3-H-S-S-base`** (the Hydra experiment
+key stays `action_mixed_open_h_sft_nano`), so it writes to its own run dir
+(`.../action_open_h/mm-C3-H-S-S-base/`) and never collides with the FD run.
+`apply_overlay.sh` registers both experiments; the same stats / filter-cache
+artifacts are reused (mode does not affect normalization stats).
 
 ## Training compute (EU AI Act 6ND)
 

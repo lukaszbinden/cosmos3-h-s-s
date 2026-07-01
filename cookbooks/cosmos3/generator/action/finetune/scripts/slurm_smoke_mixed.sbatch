@@ -19,11 +19,11 @@
 #SBATCH --time=00:40:00
 #SBATCH --constraint=h100
 #SBATCH --exclusive
-#SBATCH --job-name=healthcareeng_holoscan-cosmos3.openh44d_mixed_smoke
+#SBATCH --job-name=mm-C3-H-S-S-base-smoke
 # Per-job log under logs/ (resolved at submit time relative to the submit CWD —
 # submit from the repo root, which has a gitignored logs/). %j = job id.
-#SBATCH --output=logs/openh44d_mixed_smoke_%j.out
-#SBATCH --error=logs/openh44d_mixed_smoke_%j.out
+#SBATCH --output=logs/mm-C3-H-S-S-base-smoke_%j.out
+#SBATCH --error=logs/mm-C3-H-S-S-base-smoke_%j.out
 
 set -euo pipefail
 export TMPDIR=/tmp
@@ -110,7 +110,7 @@ srun --ntasks=1 --ntasks-per-node=1 \
   -m cosmos_framework.scripts.train \
   --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_mixed_open_h_sft_nano.toml" \
   -- \
-  job.name=action_mixed_open_h_smoke \
+  job.name=mm-C3-H-S-S-base-smoke \
   job.wandb_mode=offline \
   trainer.max_iter=10 \
   checkpoint.save_iter=10 \
