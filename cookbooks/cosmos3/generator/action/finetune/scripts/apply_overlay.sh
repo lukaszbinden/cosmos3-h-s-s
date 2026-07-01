@@ -142,33 +142,42 @@ if [[ $DRY_RUN -eq 1 ]]; then
 fi
 echo "[ok] copied $copied overlay file(s) into $FRAMEWORK_DIR"
 
-# --- register the experiment in config.py (idempotent) ---------------------
+# --- register the experiments in config.py (idempotent) --------------------
 python - "$CONFIG_PY" <<'PY'
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text()
-line = (
-    "    import cosmos_framework.configs.base.experiment.action."
-    "posttrain_config.action_fdm_open_h_sft_nano  # noqa: F401\n"
-)
-needle = (
-    "    import cosmos_framework.configs.base.experiment.action."
-    "posttrain_config.action_policy_droid_nano  # noqa: F401\n"
-)
-if line in text:
-    print(f"[ok] experiment already registered in {path}")
-elif needle in text:
-    path.write_text(text.replace(needle, needle + line))
-    print(f"[ok] registered action_fdm_open_h_sft_nano in {path}")
-else:
+
+def _imp(mod: str) -> str:
+    return (
+        "    import cosmos_framework.configs.base.experiment.action."
+        f"posttrain_config.{mod}  # noqa: F401\n"
+    )
+
+needle = _imp("action_policy_droid_nano")
+# Register both the FD-only and the mixed-mode Open-H experiments, each anchored
+# after the droid import. Insert in order so the block reads fd, then mixed.
+to_register = ["action_fdm_open_h_sft_nano", "action_mixed_open_h_sft_nano"]
+
+if needle not in text:
     raise SystemExit(
         f"ERROR: could not find the import insertion point in {path}.\n"
         f"  Expected a line importing action_policy_droid_nano to anchor after.\n"
-        f"  Add this line manually inside the experiment-imports block:\n"
-        f"  {line.strip()}"
+        f"  Add these lines manually inside the experiment-imports block:\n"
+        + "".join(f"  {_imp(m).strip()}\n" for m in to_register)
     )
+
+for mod in to_register:
+    line = _imp(mod)
+    if line in text:
+        print(f"[ok] {mod} already registered in {path}")
+        continue
+    text = text.replace(needle, needle + line)
+    print(f"[ok] registered {mod} in {path}")
+
+path.write_text(text)
 PY
 
 # --- extra deps ------------------------------------------------------------
@@ -190,6 +199,7 @@ mods = [
     "cosmos_framework.data.vfm.action.open_h_dataset",
     "cosmos_framework.data.vfm.action.datasets.openh_sft_dataset",
     "cosmos_framework.configs.base.experiment.action.posttrain_config.action_fdm_open_h_sft_nano",
+    "cosmos_framework.configs.base.experiment.action.posttrain_config.action_mixed_open_h_sft_nano",
 ]
 for m in mods:
     importlib.import_module(m)

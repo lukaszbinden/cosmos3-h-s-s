@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+# ============================================================================
+# Open-H surgical MIXED-MODE mid-training — run config for the
+# `action_mixed_open_h_sft_nano` experiment. Produces Cosmos-Surg-3-Base:
+# the SAME Open-H mixture as `action_fdm_open_h_sft_nano`, but trained on all
+# three action modes jointly (FD + inverse dynamics + policy), matching the
+# Cosmos 3 paper generator mid-training (Table 6 Action row; "Action sequence
+# configurations" figure). All recipe knobs (optimizer/lr, scheduler, 44D action
+# space, action-head skip-on-load, per-mode dataset mixture + ratios) live in the
+# registered experiment; this file only sets run-level scalars.
+#
+# Unified action space: 44D. Resolution: 480 tier (832x480 16:9).
+# Mode ratios (FD:policy:ID) live in the experiment (`_MODE_RATIOS`); edit there.
+#
+# Env required:
+#   OPENH_SURGICAL_ROOT=/path/to/open-h-embodiment/Surgical  # (optional) re-root (B) specs
+#   DATASET_PATH=<root>                                      # (optional) re-root ALL specs
+#   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
+#   WAN_VAE_PATH=<Wan2.2_VAE.pth>
+#   IMAGINAIRE_OUTPUT_ROOT=/path/to/output_root              # persist checkpoints
+# ============================================================================
+
+[job]
+task         = "vfm"
+experiment   = "action_mixed_open_h_sft_nano"
+project      = "cosmos3_action_surgical"
+group        = "action_open_h"
+name         = "action_mixed_open_h_sft_nano"
+wandb_mode   = "online"
+
+[model]
+precision = "bfloat16"
+
+[model.parallelism]
+# 8-GPU model shard per node; the launcher overrides
+# data_parallel_shard_degree to the global WORLD_SIZE (e.g. 64 for 8 nodes).
+# NOTE: WORLD_SIZE must be >= the number of nonzero-ratio modes (3 by default),
+# since RankPartitionedDataLoader gives each mode >=1 rank.
+data_parallel_shard_degree     = 8
+data_parallel_replicate_degree = 1
+
+[model.activation_checkpointing]
+mode           = "full"
+save_ops_regex = ["fmha"]
+
+[model.tokenizer]
+vae_path = "${oc.env:WAN_VAE_PATH}"
+
+[scheduler]
+cycle_lengths = [20000]   # match max_iter; 1000-step warmup set in the experiment
+
+[trainer]
+# 20000 matches the FD-only baseline for the "same data" comparison. Because the
+# base spreads updates across 3 modes, consider raising this (e.g. 40000) if you
+# want a STRONGER base rather than a controlled head-to-head vs the FD baseline.
+max_iter     = 20000
+logging_iter = 50
+
+[checkpoint]
+load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
+# Save every 100 iters: fine-grained recovery against 4h SLURM array-task
+# preemption (each ckpt ~30GB; prune old iters if disk-bound).
+save_iter = 100
+
+# The experiment packs by TOKENS: dataloader_train.max_sequence_length=45056
+# (max_samples_per_batch=None). On lower-memory GPUs, reduce the token cap at
+# launch, e.g.:
+#   --opts dataloader_train.max_sequence_length=32768
+# Do NOT also set dataloader_train.max_samples_per_batch -- the two are mutually
+# exclusive (exactly one must be None) or the batcher will assert.

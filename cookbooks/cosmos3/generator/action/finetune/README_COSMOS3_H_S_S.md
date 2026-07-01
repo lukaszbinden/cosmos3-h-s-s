@@ -446,6 +446,55 @@ on this entrypoint).
 Training output defaults to
 `$WORKSPACE/outputs/train/cosmos3_action_surgical/action_open_h/action_fdm_open_h_sft_nano/`.
 
+### Mixed-mode mid-training (Cosmos-Surg-3-Base)
+
+Besides the FD-only recipe, there is a **mixed-mode mid-training** experiment,
+`action_mixed_open_h_sft_nano`, that trains on the **same Open-H mixture** but on
+**all three action modes jointly** — forward dynamics + inverse dynamics +
+policy — exactly as the Cosmos 3 generator mid-training does (paper Table 6
+"Generator mid-training data mixture", Action row; and the "Action sequence
+configurations" figure). It produces the shared base **Cosmos-Surg-3-Base** that
+the single-mode specialists (`Cosmos-Surg-3-Simulator` = FD, `Cosmos-Surg-3-Policy`
+= policy, optional `Cosmos-Surg-3-ID`) then fine-tune from.
+
+Everything (44D space, 480 tier, 13-frame/12-step horizon, model config,
+optimizer/scheduler, token packing, warm-start with fresh 44D action heads) is
+**identical** to the FD recipe — the *only* difference is the mode mixture — so
+the two are directly comparable for the mixed-vs-single-mode ablation.
+
+- **Files:** experiment `.../posttrain_config/action_mixed_open_h_sft_nano.py`,
+  TOML `toml/sft_config/action_mixed_open_h_sft_nano.toml`, and **dedicated
+  launchers** `scripts/slurm_train_mixed.sbatch` + `scripts/slurm_smoke_mixed.sbatch`
+  (separate files so the FD launchers are untouched; no env-var toml switching).
+- **Cluster shape:** **4 nodes × 8 = 32 GPUs**; LR **linear-scaled to 2.0e-5**
+  (from the FD recipe's 3.0e-5 @ 48 GPUs, × 32/48). `data_parallel_shard_degree`
+  auto-follows the node count. `world_size` must be ≥ 3 (one rank min per mode).
+- **Mode ratios** (`_MODE_RATIOS` in the experiment): default FD:ID:policy =
+  **1:1:1** (equal), following the Cosmos 3 paper — Table 6 gives no sub-split,
+  but the paper's own joint-mode study (App. "Synergy Between Action Modes")
+  trains all three modes for equal per-mode steps. `RankPartitionedDataLoader`
+  gives each mode its own ranks, so the global batch is mixed while each rank
+  streams one mode (packing never mixes modes). Reweight toward FD only if the
+  Simulator is the priority (the paper's ablation shows equal mixing helps ID/
+  policy most and costs FD PSNR slightly).
+- **Why mixed:** in FD mode all action tokens are conditioning (clean), so the
+  action-**prediction** head (`llm2action`) gets no loss — FD-only trains the
+  model to *use* actions, not *predict* them. ID and policy are what train action
+  prediction, so a mixed base is a stronger start for policy/ID specialists.
+
+Launch (submit from the repo root, same as the FD launcher):
+
+```bash
+cd "$WORKSPACE"
+sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_smoke_mixed.sbatch  # 1-node smoke first
+sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_train_mixed.sbatch  # 4-node run
+```
+
+The mixed run writes to its own run dir
+(`.../action_open_h/action_mixed_open_h_sft_nano/`), so it never collides with
+the FD run. `apply_overlay.sh` registers both experiments; the same stats /
+filter-cache artifacts are reused (mode does not affect normalization stats).
+
 ## Training compute (EU AI Act 6ND)
 
 For regulatory reporting (`doc/Cummulative Compute Calculation.pdf`), cumulative
