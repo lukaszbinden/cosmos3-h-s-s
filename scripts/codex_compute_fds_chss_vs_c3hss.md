@@ -1,5 +1,5 @@
 # Your task:
-Evaluate C-H-S-S vs. C3-H-S-S including side-by-side comparison videos (3 videos: left is ground truth, center is C-H-S-S roll-out and right is C3-H-S-S roll-out) and an FDS plot comparing C-H-S-S vs C3-H-S-S on a long roll-out horizon (at least 100 frames) on at least 7 test episodes.
+Evaluate C-H-S-S vs. C3-H-S-S including side-by-side comparison videos (3 videos: left is ground truth, center is C-H-S-S roll-out and right is C3-H-S-S roll-out) and an FDS plot comparing C-H-S-S vs C3-H-S-S on a long roll-out horizon (at least 100 frames) on at least 7 test episodes. You perform all these tasks on the EOS cluster, that has H100 GPUs.
 
 # Cosmos3-H-Surigcal-Simulator (C3-H-S-S) pointers:
 ## git repo / code:
@@ -59,7 +59,6 @@ if you encounter any errors you cannot fix autonomously, report back to me for g
 # Logging
 write all your steps and progress into a log file codex_chss-vs-c3hss.log under
 /home/lzbinden/git/cosmos3-h-s-s/outputs/evaluation
-
 
 # FINAL DELIVERABLES:
 a c-h-s-s_vs_c3-h-s-s_report.md file that briefly describes the results and comparison parameters, with pointers to the directory containing the comparison videos (as described) and the FDS plot. The output directory must be timestamp-based folder in base output path
