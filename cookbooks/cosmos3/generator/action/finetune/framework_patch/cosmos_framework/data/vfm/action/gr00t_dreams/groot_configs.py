@@ -217,8 +217,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "state.psm1_pose",
             "state.psm2_pose",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -251,8 +251,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             input_quat="wxyz",
             ref_quat="wxyz",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -286,8 +286,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             input_quat="wxyz",
             ref_quat="wxyz",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -313,8 +313,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "action.left_joints": ActionKeyConfig(rep="relative", state_key="state.left_joints"),
             "action.right_joints": ActionKeyConfig(rep="relative", state_key="state.right_joints"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -346,8 +346,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "state.psm1_pose",
             "state.psm2_pose",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -395,8 +395,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
                 reference_rotation_format="euler",
             ),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -430,8 +430,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             input_rot="euler",
             ref_rot="euler",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -453,8 +453,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "action.psm_cartesian_pose": ActionKeyConfig(rep="rel_xyz_rot6d", state_key="state.psm_cartesian_pose"),
             "action.psm_gripper": ActionKeyConfig(rep="absolute"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -478,8 +478,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "action.right_arm_delta_xyz": ActionKeyConfig(rep="delta"),
             "action.left_arm_delta_xyz": ActionKeyConfig(rep="delta"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -512,8 +512,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             input_quat="xyzw",
             ref_quat="xyzw",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -555,8 +555,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             input_quat="xyzw",
             ref_quat="xyzw",
         ),
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -582,8 +582,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             ),
             "action.gripper": ActionKeyConfig(rep="absolute"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -607,8 +607,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "action.psm1_pose": ActionKeyConfig(rep="rel_xyz_rot6d", state_key="state.psm1_pose"),
             "action.psm2_pose": ActionKeyConfig(rep="rel_xyz_rot6d", state_key="state.psm2_pose"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -653,8 +653,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
                 reference_quat_order="xyzw",
             ),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -696,8 +696,8 @@ EMBODIMENT_REGISTRY: dict[str, dict] = {
             "action.delta_pose": ActionKeyConfig(rep="delta"),
             "action.gripper": ActionKeyConfig(rep="absolute"),
         },
-        "video_width": 512,
-        "video_height": 288,
+        "video_width": 832,
+        "video_height": 480,
         "modality_filename": "meta/modality.json",
         "normalization_mode": "mean_std",
     },
@@ -1581,18 +1581,25 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
         # CMR Versius endoscope video resolution (original: 1920x1080, 16:9 aspect ratio)
         #
         # IMPORTANT: Resolution must be divisible by 16 (8x VAE compression × 2 patch size)
-        # Valid 16:9 options: 512x288, 768x432, 1024x576, 1280x720
+        # Valid 16:9 options: 512x288, 768x432, 832x480, 1024x576, 1280x720
         # Invalid: 384x216 (216/16=13.5), 320x180 (180/16=11.25)
         #
-        # Using 512x288 for fast PoC training while maintaining 16:9 aspect ratio
-        # For production: consider 768x432 or 1280x720 (matches Cosmos 720p pretrain)
-        # cf. https://docs.google.com/presentation/d/1G0mqiQRBQohDAMjMG6hpLzPVCZi3KbJxHSi4LXMJl5A/edit?slide=id.g3b869a60288_1_50#slide=id.g3b869a60288_1_50
-        width = 512 if not downscaled_res else 256
-        height = 288 if not downscaled_res else 256
+        # Set to 832x480 to MATCH the model's 480p training tier
+        # (VIDEO_RES_SIZE_INFO["480"]["16,9"]). This is the fix for a lossy
+        # downsample-then-upsample round-trip: previously this resized native
+        # 1920x1080 -> 512x288 here, then the ActionTransformPipeline upsampled
+        # 512x288 -> 832x480, permanently discarding detail. Resizing directly to
+        # 832x480 makes the ActionTransformPipeline resize a NO-OP (source already
+        # equals the 480p/16:9 target), so there is a SINGLE native->832x480
+        # downsample and the model trains on true 832x480 detail. 832/16=52,
+        # 480/16=30 (both VAE-valid). For a higher-detail run, bump to 1280x720.
+        width = 832 if not downscaled_res else 256
+        height = 480 if not downscaled_res else 256
     elif embodiment == "suturebot":
-        # SutureBot: same resolution as CMR Versius (512x288, 16:9)
-        width = 512 if not downscaled_res else 256
-        height = 288 if not downscaled_res else 256
+        # SutureBot: same resolution as CMR Versius (832x480, 16:9) — see the CMR
+        # note above on why this matches the 480p training tier (no round-trip).
+        width = 832 if not downscaled_res else 256
+        height = 480 if not downscaled_res else 256
 
     # Build embodiment-specific transforms
     if embodiment == "cmr_versius":
