@@ -466,9 +466,11 @@ the two are directly comparable for the mixed-vs-single-mode ablation.
   TOML `toml/sft_config/action_mixed_open_h_sft_nano.toml`, and **dedicated
   launchers** `scripts/slurm_train_mixed.sbatch` + `scripts/slurm_smoke_mixed.sbatch`
   (separate files so the FD launchers are untouched; no env-var toml switching).
-- **Cluster shape:** **4 nodes × 8 = 32 GPUs**; LR **linear-scaled to 2.0e-5**
-  (from the FD recipe's 3.0e-5 @ 48 GPUs, × 32/48). `data_parallel_shard_degree`
-  auto-follows the node count. `world_size` must be ≥ 3 (one rank min per mode).
+- **Cluster shape:** **6 nodes × 8 = 48 GPUs**, identical to the FD run (same LR
+  3.0e-5, same 45056 token cap) so the mixed run is a clean mirror of FD for the
+  H1 ablation. `data_parallel_shard_degree` auto-follows the node count.
+  `world_size` must be ≥ 3 (one rank min per mode). (A 32-GPU attempt OOM'd on
+  resume — 32-way FSDP held ~1.5× more model-state per GPU with no headroom.)
 - **Mode ratios** (`_MODE_RATIOS` in the experiment): default FD:ID:policy =
   **1:1:1** (equal), following the Cosmos 3 paper — Table 6 gives no sub-split,
   but the paper's own joint-mode study (App. "Synergy Between Action Modes")

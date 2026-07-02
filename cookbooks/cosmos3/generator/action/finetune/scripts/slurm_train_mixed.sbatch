@@ -14,11 +14,12 @@
 #
 #SBATCH --account=healthcareeng_holoscan
 #SBATCH --partition=batch
-# 4 nodes x 8 H100 = 32 GPUs. The experiment LR (2.0e-5) is linear-scaled for
-# this world size (from 3.0e-5 @ 48 GPUs). data_parallel_shard_degree is set to
-# SLURM_NNODES*8 below, so it auto-follows this node count (=32). NOTE: 32 >= 3
-# (the number of action modes), as RankPartitionedDataLoader requires.
-#SBATCH --nodes=4
+# 6 nodes x 8 H100 = 48 GPUs, IDENTICAL to the FD run (matching GPUs gives the
+# same per-GPU FSDP shard, avoiding the 32-GPU resume-OOM, and makes this a clean
+# LR/token-cap mirror of FD for the H1 ablation). data_parallel_shard_degree is
+# set to SLURM_NNODES*8 below, so it auto-follows this node count (=48). NOTE:
+# 48 >= 3 (the number of action modes), as RankPartitionedDataLoader requires.
+#SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
@@ -120,7 +121,7 @@ fi
 echo "  log: $WORKSPACE/logs/mm-C3-H-S-S-base_${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}.out"
 
 # --- Pre-flight: the two artifacts the run REQUIRES on the host ------------
-# Fail fast (before burning a 4-node allocation) with a clear message.
+# Fail fast (before burning a 6-node allocation) with a clear message.
 if [[ -z "${BASE_CHECKPOINT_PATH:-}" || ! -e "$BASE_CHECKPOINT_PATH" ]]; then
   echo "FATAL: BASE_CHECKPOINT_PATH not set or missing on host: '${BASE_CHECKPOINT_PATH:-}'." >&2
   echo "       Stage the Cosmos3-Nano DCP checkpoint dir there (see env.sh)." >&2

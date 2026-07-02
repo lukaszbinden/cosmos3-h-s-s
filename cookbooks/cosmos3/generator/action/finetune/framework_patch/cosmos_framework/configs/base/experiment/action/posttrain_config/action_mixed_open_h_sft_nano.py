@@ -43,15 +43,16 @@ two directly comparable for the mixed-vs-single-mode ablation (H1-ablation).
 Mode mixture (rank partitioning)
 --------------------------------
 ``RankPartitionedDataLoader`` assigns each rank to exactly ONE mode by ratio
-(this recipe runs on 4 nodes x 8 = 32 GPUs at FD:ID:policy = ``_MODE_RATIOS``
-below = 1:1:1, so ~11/~11/~10 ranks each). The *global* batch is therefore
+(this recipe runs on 6 nodes x 8 = 48 GPUs at FD:ID:policy = ``_MODE_RATIOS``
+below = 1:1:1, so 16/16/16 ranks each). The *global* batch is therefore
 mixed-mode (gradients average across modes), while each rank streams a single
 mode (so token packing never mixes modes within one packed sequence).
 ``_MODE_RATIOS`` is a HYPERPARAMETER — see its docstring.
 
-Configured for 4 nodes x 8 GPU = 32 GPUs (LR linear-scaled to 2.0e-5 from the
-FD recipe's 3.0e-5 @ 48 GPUs; see ``optimizer.lr`` below). Launch with the
-dedicated launcher (does NOT rely on env-var toml switching)::
+Configured for 6 nodes x 8 GPU = 48 GPUs, IDENTICAL to the FD recipe (same LR
+3.0e-5, same 45056 token cap, same schedule) so this run is a clean mirror of
+the FD baseline differing ONLY in the mode mixture. Launch with the dedicated
+launcher (does NOT rely on env-var toml switching)::
 
     OPENH_SURGICAL_ROOT=/path/to/open-h-embodiment/Surgical \\
     BASE_CHECKPOINT_PATH=<warm-start DCP dir> \\
@@ -89,6 +90,14 @@ _OPEN_H_MAX_ACTION_DIM = 44
 _OPEN_H_RESOLUTION = "480"
 # 13 frames = 1 conditional + 12 prediction; 12 action timesteps (div. by 4).
 _OPEN_H_NUM_FRAMES = 13
+# Packed-sequence TOKEN cap = 45056, IDENTICAL to the FD recipe. This is safe at
+# the 6-node/48-GPU shape (FSDP shards params+grads+optimizer+EMA across 48 ranks,
+# same per-GPU model-state as the FD run, which trains + resumes fine at 45056).
+# History: an earlier 4-node/32-GPU attempt OOM'd on RESUME in the backward
+# ("Failed to CUDA calloc async", job 5541390) because 32-way sharding held ~1.5x
+# more model-state per GPU with no headroom. Going to 48 GPUs restores that
+# headroom, so we keep the FD token cap for max throughput + a clean ablation.
+_OPEN_H_MAX_SEQ_LEN = 45056
 
 # ---------------------------------------------------------------------------
 # Mode mixture: HYPERPARAMETER. RankPartitionedDataLoader allocates ranks to
@@ -231,16 +240,14 @@ action_mixed_open_h_sft_nano = LazyDict(
                 "llm2action",
                 "action_modality_embed",
             ],
-            # Peak LR 2.0e-5 (base/shared weights). This recipe is configured for
-            # 4 nodes x 8 = 32 GPUs, LINEAR-SCALED from the FD recipe's 3.0e-5 @
-            # 48 GPUs (6 nodes) by the world-size (batch) ratio 32/48 = 2/3:
-            #   3.0e-5 * 32/48 = 2.0e-5.
-            # (Global batch scales with world_size under token packing, so fewer
-            # GPUs -> smaller effective batch -> proportionally lower LR.) This
-            # also happens to land on the colleague's proven 48-GPU value (2.0e-5),
-            # a reassuring sanity check. If you launch at a different world size,
-            # rescale: lr ~= 3.0e-5 * (WORLD_SIZE / 48).
-            lr=2.0e-05,
+            # Peak LR 3.0e-5 (base/shared weights) — IDENTICAL to the FD recipe at
+            # the same 6-node/48-GPU shape. Keeping the FD LR (not a scaled value)
+            # makes this mixed run a clean mirror of the FD baseline: same GPUs,
+            # same token cap, same LR/schedule — the ONLY difference is the mode
+            # mixture. That is exactly the controlled setup H1(ablation) needs.
+            # If you relaunch at a different world size, rescale lr ~= 3.0e-5 *
+            # (WORLD_SIZE / 48).
+            lr=3.0e-05,
             lr_multipliers={
                 # Fresh 44D action heads (base ckpt is 64D; skipped on load) get a
                 # 5x boost to catch up to the warm-started tower.
@@ -337,7 +344,7 @@ action_mixed_open_h_sft_nano = LazyDict(
             # single mode (RankPartitioned), so packing only ever combines
             # same-mode samples.
             max_samples_per_batch=None,
-            max_sequence_length=45056,
+            max_sequence_length=_OPEN_H_MAX_SEQ_LEN,
             patch_spatial=2,
             sound_latent_fps=0,
             tokenizer_spatial_compression_factor=16,
@@ -364,7 +371,7 @@ action_mixed_open_h_sft_nano = LazyDict(
             audio_sample_rate=48000,
             dataset_name="action_open_h_mixed_val",
             max_samples_per_batch=None,
-            max_sequence_length=45056,
+            max_sequence_length=_OPEN_H_MAX_SEQ_LEN,
             patch_spatial=2,
             sound_latent_fps=0,
             tokenizer_spatial_compression_factor=16,

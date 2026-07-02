@@ -68,8 +68,9 @@ load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
 save_iter = 100
 
 # The experiment packs by TOKENS: dataloader_train.max_sequence_length=45056
-# (max_samples_per_batch=None). On lower-memory GPUs, reduce the token cap at
-# launch, e.g.:
+# (max_samples_per_batch=None) -- IDENTICAL to the FD recipe, safe at 48 GPUs.
+# (An earlier 32-GPU attempt OOM'd on resume; running at the FD's 48 GPUs restores
+# per-GPU headroom.) On lower-memory shapes, reduce at launch, e.g.:
 #   --opts dataloader_train.max_sequence_length=32768
 # Do NOT also set dataloader_train.max_samples_per_batch -- the two are mutually
 # exclusive (exactly one must be None) or the batcher will assert.
