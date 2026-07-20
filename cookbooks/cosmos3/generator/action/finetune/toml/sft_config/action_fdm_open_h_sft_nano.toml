@@ -58,10 +58,12 @@ load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
 # preemption (each ckpt ~30GB; prune old iters if disk-bound).
 save_iter = 100
 
-# The experiment packs by TOKENS: dataloader_train.max_sequence_length=45056
-# (max_samples_per_batch=None). This bounds per-batch activation memory (the
-# colleague's proven 48-GPU value). On lower-memory GPUs, reduce the token cap at
-# launch, e.g.:
-#   --opts dataloader_train.max_sequence_length=32768
+# The 32-GPU recipe packs at most 32768 tokens per rank and accumulates two
+# microsteps. Its effective token batch is 96.97% of the former 48x45056 recipe,
+# while the smaller microbatch restores memory headroom for larger 32-way FSDP
+# shards.
 # Do NOT also set dataloader_train.max_samples_per_batch -- the two are mutually
 # exclusive (exactly one must be None) or the batcher will assert.
+
+[dataloader_train]
+max_sequence_length = 32768

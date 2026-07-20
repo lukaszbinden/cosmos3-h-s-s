@@ -44,15 +44,15 @@ Mode mixture (rank partitioning)
 --------------------------------
 ``RankPartitionedDataLoader`` assigns each rank to exactly ONE mode by ratio
 (this recipe runs on 6 nodes x 8 = 48 GPUs at FD:ID:policy = ``_MODE_RATIOS``
-below = 1:1:1, so 16/16/16 ranks each). The *global* batch is therefore
+below = 1:1:1). The *global* batch is therefore
 mixed-mode (gradients average across modes), while each rank streams a single
 mode (so token packing never mixes modes within one packed sequence).
 ``_MODE_RATIOS`` is a HYPERPARAMETER — see its docstring.
 
-Configured for 6 nodes x 8 GPU = 48 GPUs, IDENTICAL to the FD recipe (same LR
-3.0e-5, same 45056 token cap, same schedule) so this run is a clean mirror of
-the FD baseline differing ONLY in the mode mixture. Launch with the dedicated
-launcher (does NOT rely on env-var toml switching)::
+The current launcher uses 6 nodes x 8 GPU = 48 GPUs. It preserves the prior
+32-GPU effective token batch by pairing a 21845-token microbatch with two
+gradient-accumulation steps. Launch with the dedicated launcher (does NOT rely
+on env-var toml switching)::
 
     OPENH_SURGICAL_ROOT=/path/to/open-h-embodiment/Surgical \\
     BASE_CHECKPOINT_PATH=<warm-start DCP dir> \\
@@ -68,6 +68,7 @@ launcher (does NOT rely on env-var toml switching)::
 """
 
 import copy
+import os
 
 from hydra.core.config_store import ConfigStore
 
@@ -90,14 +91,12 @@ _OPEN_H_MAX_ACTION_DIM = 44
 _OPEN_H_RESOLUTION = "480"
 # 13 frames = 1 conditional + 12 prediction; 12 action timesteps (div. by 4).
 _OPEN_H_NUM_FRAMES = 13
-# Packed-sequence TOKEN cap = 45056, IDENTICAL to the FD recipe. This is safe at
-# the 6-node/48-GPU shape (FSDP shards params+grads+optimizer+EMA across 48 ranks,
-# same per-GPU model-state as the FD run, which trains + resumes fine at 45056).
-# History: an earlier 4-node/32-GPU attempt OOM'd on RESUME in the backward
-# ("Failed to CUDA calloc async", job 5541390) because 32-way sharding held ~1.5x
-# more model-state per GPU with no headroom. Going to 48 GPUs restores that
-# headroom, so we keep the FD token cap for max throughput + a clean ablation.
-_OPEN_H_MAX_SEQ_LEN = 45056
+# Packed-sequence TOKEN cap for the 6-node/48-GPU shape. The prior 32-GPU run
+# was already close to the 80-GB H100 ceiling at 32768 tokens/rank. A
+# 21845-token cap retains activation-memory headroom; with two accumulation
+# steps it gives 2,097,120 tokens/optimizer step (within 0.002% of the prior
+# 2,097,152-token effective global batch).
+_OPEN_H_MAX_SEQ_LEN = 21845
 
 # ---------------------------------------------------------------------------
 # Mode mixture: HYPERPARAMETER. RankPartitionedDataLoader allocates ranks to
@@ -128,6 +127,19 @@ _MODE_RATIOS = {
     "inverse_dynamics": 1,
     "policy": 1,
 }
+
+# Preserve this experiment's mixed-mode architecture while allowing a
+# specialization job to train on exactly one mode.  This must happen before the
+# LazyDict datasets are constructed so the model architecture remains identical
+# to the mixed checkpoint while only the selected training mode changes.
+_MODE_OVERRIDE = os.environ.get("COSMOS_OPENH_MODE_OVERRIDE")
+if _MODE_OVERRIDE:
+    if _MODE_OVERRIDE not in _MODE_RATIOS:
+        raise ValueError(
+            f"Invalid COSMOS_OPENH_MODE_OVERRIDE={_MODE_OVERRIDE!r}; "
+            f"expected one of {sorted(_MODE_RATIOS)}"
+        )
+    _MODE_RATIOS = {mode: int(mode == _MODE_OVERRIDE) for mode in _MODE_RATIOS}
 
 
 def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, iterable_shuffle: bool):
@@ -240,14 +252,10 @@ action_mixed_open_h_sft_nano = LazyDict(
                 "llm2action",
                 "action_modality_embed",
             ],
-            # Peak LR 3.0e-5 (base/shared weights) — IDENTICAL to the FD recipe at
-            # the same 6-node/48-GPU shape. Keeping the FD LR (not a scaled value)
-            # makes this mixed run a clean mirror of the FD baseline: same GPUs,
-            # same token cap, same LR/schedule — the ONLY difference is the mode
-            # mixture. That is exactly the controlled setup H1(ablation) needs.
-            # If you relaunch at a different world size, rescale lr ~= 3.0e-5 *
-            # (WORLD_SIZE / 48).
-            lr=3.0e-05,
+            # 48 GPUs use a 21845-token/rank cap and two accumulation steps:
+            # 48*21845*2 is within 0.002% of the prior 32*32768*2 effective
+            # token batch, so its already-scaled peak LR remains unchanged.
+            lr=2.909090909090909e-05,
             lr_multipliers={
                 # Fresh 44D action heads (base ckpt is 64D; skipped on load) get a
                 # 5x boost to catch up to the warm-started tower.
@@ -270,7 +278,7 @@ action_mixed_open_h_sft_nano = LazyDict(
         ),
         trainer=dict(
             distributed_parallelism="fsdp",
-            grad_accum_iter=1,
+            grad_accum_iter=2,
             logging_iter=50,
             # 20k steps to match the FD baseline for the "same data" comparison.
             # NOTE: this base spreads updates across 3 modes, so each mode sees
@@ -310,6 +318,9 @@ action_mixed_open_h_sft_nano = LazyDict(
             dcp_async_mode_enabled=True,
             enable_gcs_patch_in_boto3=False,
             keys_not_to_resume=[],
+            # Preserve resumed scheduler/optimizer state and iteration, while
+            # reconciling base LRs to this configured value after loading.
+            enforce_configured_lr_on_resume=True,
             # Action-projection heads init fresh from the base (base is 64D vs our
             # 44D); EMA warm-starts from net.
             keys_to_skip_loading=[

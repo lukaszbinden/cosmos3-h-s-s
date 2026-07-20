@@ -1630,7 +1630,6 @@ class LeRobotSingleDataset(Dataset):
         step_indices = np.maximum(step_indices, 0)
         step_indices = np.minimum(step_indices, max_length - 1)
         # Get the annotations
-        task_indices: list[int] = []
         assert key.startswith("annotation."), f"Language key must start with 'annotation.', got {key}"
         subkey = key.replace("annotation.", "")
         annotation_meta = self.lerobot_modality_meta.annotation
@@ -1642,9 +1641,29 @@ class LeRobotSingleDataset(Dataset):
         original_key = subkey_meta.original_key
         if original_key is None:
             original_key = key
+
+        # LeRobot annotations occur in two forms:
+        #   1. numeric task indices that resolve through meta/tasks.jsonl; and
+        #   2. direct text columns (for example Fausto's instruction.text).
+        # Pandas/numpy scalars expose .item(), but Python strings do not.  The
+        # previous unconditional .item() therefore rejected every direct-text
+        # sample and caused OpenHMixedLeRobotDataset to silently replace it via
+        # its retry path, biasing the training mixture.
+        annotation_values = []
         for i in range(len(step_indices)):
-            task_indices.append(self.curr_traj_data[original_key][step_indices[i]].item())
-        return self.tasks.loc[task_indices]["task"].tolist()
+            value = self.curr_traj_data[original_key][step_indices[i]]
+            annotation_values.append(value.item() if hasattr(value, "item") else value)
+
+        is_direct_text = [isinstance(value, str) for value in annotation_values]
+        if all(is_direct_text):
+            return annotation_values
+        if any(is_direct_text):
+            raise TypeError(
+                f"Annotation column {original_key!r} mixes direct text and task indices: "
+                f"{[type(value).__name__ for value in annotation_values]}"
+            )
+
+        return self.tasks.loc[annotation_values]["task"].tolist()
 
     def get_data_by_modality(
         self,

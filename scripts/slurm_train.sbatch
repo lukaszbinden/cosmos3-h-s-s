@@ -15,8 +15,8 @@
 #   source env.sh
 #   SFT_TOML=configs/my_config.toml sbatch scripts/slurm_train.sbatch
 #
-# Adjust --nodes to match 8 GPUs per node × desired GPU count
-# (e.g. --nodes=6 for 48 GPUs with H100 80GB nodes).
+# Keep --nodes at or below 4 (32 H100s) so a single training job remains within
+# the team's 50-H100 aggregate allocation.
 
 set -euo pipefail
 export TMPDIR=/tmp

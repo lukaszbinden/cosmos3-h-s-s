@@ -14,11 +14,9 @@
 #
 #SBATCH --account=healthcareeng_holoscan
 #SBATCH --partition=batch
-# 6 nodes x 8 H100 = 48 GPUs, IDENTICAL to the FD run (matching GPUs gives the
-# same per-GPU FSDP shard, avoiding the 32-GPU resume-OOM, and makes this a clean
-# LR/token-cap mirror of FD for the H1 ablation). data_parallel_shard_degree is
-# set to SLURM_NNODES*8 below, so it auto-follows this node count (=48). NOTE:
-# 48 >= 3 (the number of action modes), as RankPartitionedDataLoader requires.
+# 6 nodes x 8 H100 = 48 GPUs. data_parallel_shard_degree is set to
+# SLURM_NNODES*8 below, so it auto-follows this node count (=48). 48 >= 3 (the
+# number of action modes), as RankPartitionedDataLoader requires.
 #SBATCH --nodes=6
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=03:55:00

@@ -38,7 +38,7 @@ precision = "bfloat16"
 
 [model.parallelism]
 # 8-GPU model shard per node; the launcher overrides
-# data_parallel_shard_degree to the global WORLD_SIZE (e.g. 64 for 8 nodes).
+# data_parallel_shard_degree to the global WORLD_SIZE (48 for 6 nodes).
 # NOTE: WORLD_SIZE must be >= the number of nonzero-ratio modes (3 by default),
 # since RankPartitionedDataLoader gives each mode >=1 rank.
 data_parallel_shard_degree     = 8
@@ -67,10 +67,12 @@ load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
 # preemption (each ckpt ~30GB; prune old iters if disk-bound).
 save_iter = 100
 
-# The experiment packs by TOKENS: dataloader_train.max_sequence_length=45056
-# (max_samples_per_batch=None) -- IDENTICAL to the FD recipe, safe at 48 GPUs.
-# (An earlier 32-GPU attempt OOM'd on resume; running at the FD's 48 GPUs restores
-# per-GPU headroom.) On lower-memory shapes, reduce at launch, e.g.:
-#   --opts dataloader_train.max_sequence_length=32768
+# The 48-GPU recipe packs at most 21845 tokens per rank and accumulates two
+# microsteps. Its 2,097,120-token effective batch is within 0.002% of the prior
+# 32x32768x2 recipe (2,097,152 tokens/optimizer step), so the configured peak LR
+# remains unchanged.
 # Do NOT also set dataloader_train.max_samples_per_batch -- the two are mutually
 # exclusive (exactly one must be None) or the batcher will assert.
+
+[dataloader_train]
+max_sequence_length = 21845

@@ -133,7 +133,8 @@ action_fdm_open_h_sft_nano = LazyDict(
             # larger, more diverse 36-leaf mixture, while staying conservative for
             # the 54D surgical warm-start (shared tower already adapted). Override
             # via TOML (optimizer.lr=...) if loss/throughput says otherwise.
-            lr=3.0e-05,
+            # 32*32768*2 / (48*45056) = 96.97% of the original token batch.
+            lr=2.909090909090909e-05,
             lr_multipliers={
                 # Action-projection heads re-init fresh (the 54D ckpt had a
                 # different max_action_dim; keys_to_skip_loading drops them, so
@@ -171,7 +172,7 @@ action_fdm_open_h_sft_nano = LazyDict(
         ),
         trainer=dict(
             distributed_parallelism="fsdp",
-            grad_accum_iter=1,
+            grad_accum_iter=2,
             logging_iter=50,
             max_iter=20000,
             max_val_iter=None,

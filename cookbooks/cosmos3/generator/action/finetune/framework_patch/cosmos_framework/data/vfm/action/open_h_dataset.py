@@ -61,6 +61,7 @@ for the training entry point.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from random import randint
@@ -74,6 +75,7 @@ from cosmos_framework.utils import log
 from cosmos_framework.data.vfm.action.domain_utils import get_domain_id
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import (
     LeRobotSingleDataset,
+    ModalityConfig,
     WrappedLeRobotSingleDataset,
 )
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
@@ -231,6 +233,28 @@ class OpenHMixedLeRobotDataset(Dataset):
             if isinstance(config, dict) and "modality_filename" in config:
                 modality_filename = config.pop("modality_filename")
 
+            # Language / caption conditioning.
+            #
+            # ``_build_generic_config_and_transforms`` (the per-embodiment config
+            # used by every ``jhu_dvrk_mono`` leaf) requests only video/state/action
+            # modalities, so no ``annotation.*`` key ever reaches ``__getitem__`` and
+            # every window would otherwise get ``ai_caption=""``.  Where a leaf's
+            # ``modality.json`` declares the episode-level ``human.task_description``
+            # annotation (currently ``jhu/imerse/suturebot`` — "knot tying" /
+            # "needle pickup" / "needle throw"), request it as a single-frame
+            # ``language`` modality so ``LeRobotSingleDataset.get_language`` resolves
+            # it via ``original_key=task_index`` → ``meta/tasks.jsonl``.
+            #
+            # This is deliberately best-effort and per-leaf: leaves that do NOT
+            # declare ``human.task_description`` (other Open-H surgical leaves use a
+            # ``task`` / ``instruction`` annotation, or none) are left exactly as
+            # before and never get a ``language`` key added — so the sub-dataset's
+            # ``_check_integrity`` and ``get_language`` never assert on a missing key.
+            language_key = self._leaf_task_description_key(path, modality_filename)
+            if language_key is not None:
+                config["language"] = ModalityConfig(delta_indices=[0], modality_keys=[language_key])
+                log.info(f"    language conditioning: {language_key} (episode-level task description)")
+
             transform = train_tf if spec_data_split in ("train", "full") else test_tf
 
             sub = WrappedLeRobotSingleDataset(
@@ -352,6 +376,39 @@ class OpenHMixedLeRobotDataset(Dataset):
         # (T, C, H, W) → (C, T, H, W)
         return video.permute(1, 0, 2, 3).contiguous()
 
+    # Annotation keys carrying a natural-language caption, in priority order.
+    # ``coarse_action`` is the predict2.5 per-window key; ``task_description`` is
+    # the episode-level Open-H surgical annotation (resolves through
+    # ``meta/tasks.jsonl``).  ``__getitem__`` takes the first one present.
+    _CAPTION_ANNOTATION_KEYS = (
+        "annotation.human.coarse_action",
+        "annotation.human.task_description",
+    )
+
+    @staticmethod
+    def _leaf_task_description_key(path: str, modality_filename: str | None) -> str | None:
+        """Annotation modality key for a leaf's episode-level task description.
+
+        Returns ``"annotation.human.task_description"`` iff the leaf's
+        ``modality.json`` declares that annotation subkey, else ``None``.  Only
+        ``human.task_description`` is wired here because it is the one annotation
+        scheme known to resolve cleanly through ``meta/tasks.jsonl`` (via
+        ``original_key=task_index``); the ``task`` / ``instruction`` schemes seen on
+        other Open-H surgical leaves are intentionally left untouched so their
+        windows keep their current (empty-caption) behavior rather than risk an
+        ``_check_integrity`` / ``get_language`` assertion mid-training.
+
+        Best-effort: any I/O or JSON error yields ``None`` (no language modality).
+        """
+        modality_path = Path(path) / (modality_filename or "meta/modality.json")
+        try:
+            with open(modality_path) as f:
+                annotation = json.load(f).get("annotation") or {}
+        except (OSError, ValueError):
+            return None
+        subkey = "human.task_description"
+        return f"annotation.{subkey}" if subkey in annotation else None
+
     def _get_raw_sample(self, dataset_idx: int, real_idx: int) -> dict[str, Any]:
         """Pull a raw transformed sample from the underlying gr00t_dreams dataset.
 
@@ -399,12 +456,15 @@ class OpenHMixedLeRobotDataset(Dataset):
                 video = self._format_video(outputs["video"])
 
                 ai_caption = ""
-                if "annotation.human.coarse_action" in outputs:
-                    raw_text = outputs["annotation.human.coarse_action"]
+                for ann_key in self._CAPTION_ANNOTATION_KEYS:
+                    if ann_key not in outputs:
+                        continue
+                    raw_text = outputs[ann_key]
                     if isinstance(raw_text, list) and raw_text:
                         raw_text = raw_text[0]
-                    if isinstance(raw_text, str):
+                    if isinstance(raw_text, str) and raw_text.strip():
                         ai_caption = raw_text.split(":")[-1].strip()
+                        break
 
                 conditioning_fps = torch.tensor(
                     self.effective_fps_per_dataset[dataset_idx], dtype=torch.long

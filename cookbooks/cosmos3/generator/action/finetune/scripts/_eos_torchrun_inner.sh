@@ -9,7 +9,20 @@ echo "SLURM_JOB_ID=${SLURM_JOB_ID:-unset} SLURM_NODEID=${SLURM_NODEID:-unset} SL
 echo "MASTER_ADDR=${MASTER_ADDR:-unset} MASTER_PORT=${MASTER_PORT:-unset}"
 
 if ! command -v ffmpeg >/dev/null; then
-    apt-get update -qq
+    # NVIDIA's package mirror can briefly expose a new Release file before the
+    # matching Packages index has propagated. Retry that transient mismatch so
+    # an otherwise healthy GPU evaluation does not fail during container setup.
+    for attempt in 1 2 3; do
+        if apt-get -o Acquire::Retries=3 update -qq; then
+            break
+        fi
+        if (( attempt == 3 )); then
+            echo "FATAL: apt-get update failed after $attempt attempts." >&2
+            exit 100
+        fi
+        echo "apt-get update attempt $attempt failed; retrying shortly..." >&2
+        sleep $((attempt * 10))
+    done
     apt-get install -y --no-install-recommends ffmpeg >/dev/null
     ldconfig
 fi

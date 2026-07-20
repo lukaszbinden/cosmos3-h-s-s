@@ -14,10 +14,10 @@
 #
 #SBATCH --account=healthcareeng_holoscan
 #SBATCH --partition=batch
-# 6 nodes x 8 H100 = 48 GPUs, matching the sean-cosmos3_surgical_fd reference run
-# (surgical_fd_nano_48gpu_cmr54). data_parallel_shard_degree is set to
-# SLURM_NNODES*8 below, so it auto-follows this node count (=48).
-#SBATCH --nodes=6
+# 4 nodes x 8 H100 = 32 GPUs, keeping each training allocation below the team's
+# 50-H100 aggregate budget. data_parallel_shard_degree is set to
+# SLURM_NNODES*8 below, so it auto-follows this node count (=32).
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=03:55:00
 #SBATCH --constraint=h100
