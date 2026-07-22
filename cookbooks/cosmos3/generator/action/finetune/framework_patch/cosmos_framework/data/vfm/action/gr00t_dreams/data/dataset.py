@@ -1087,7 +1087,14 @@ class LeRobotSingleDataset(Dataset):
                     all_steps.append((trajectory_id, base_index))
             return all_steps
 
-        action_delta_indices = action_config.delta_indices
+        # CAMP Phase 1: filter on the CURRENT action window only (delta >= 0).
+        # History rows (negative deltas) are conditioning-only context, so
+        # sample VALIDITY must be identical across the H=0 / H16 / H16+memory
+        # arms — otherwise the arms would train on different sample sets and
+        # the comparison would confound data with architecture. Restricting to
+        # the non-negative subset also keeps every pre-computed filter cache
+        # (keyed on the 12 current-window indices) valid for history runs.
+        action_delta_indices = [int(d) for d in action_config.delta_indices if int(d) >= 0]
         print(
             f"{rank}[CMR Filter] Using action delta indices: {action_delta_indices[:5]}{'...' if len(action_delta_indices) > 5 else ''} (len={len(action_delta_indices)})"
         )

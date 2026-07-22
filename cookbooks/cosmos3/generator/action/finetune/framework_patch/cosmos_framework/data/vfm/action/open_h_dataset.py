@@ -79,6 +79,12 @@ from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import (
     WrappedLeRobotSingleDataset,
 )
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
+from cosmos_framework.data.vfm.action.gr00t_dreams.data.history_utils import (
+    apply_history_ablation,
+    history_ablation_seed,
+    split_history_and_current,
+    validate_history_args,
+)
 
 
 _FwdInvPol = Literal["forward_dynamics", "inverse_dynamics", "policy", "joint"]
@@ -186,6 +192,20 @@ class OpenHMixedLeRobotDataset(Dataset):
             sample.  Mirrors the predict2.5 ``MixedLeRobotDataset`` behavior
             which retries indefinitely; we bound it to avoid silently
             hiding systemic data issues.
+        num_history_actions: CAMP Phase 1 — number of recent EXECUTED action
+            rows (H) to sample before the current window, at the embodiment's
+            effective timestep interval, through the same per-embodiment
+            transform + normalization stack.  When > 0, each sample gains a
+            ``"history_action"`` key of shape ``(H, D_native)`` which the
+            (pinned) framework ``ActionTransformPipeline`` concatenates ahead
+            of ``"action"``, pads to ``max_action_dim``, and marks as clean
+            conditioning in the sequence plan.  ``0`` (default) is
+            byte-identical to the pre-CAMP pipeline — no new keys, identical
+            delta indices.
+        history_ablation: ``None`` (real history), ``"zero"`` (history rows
+            zeroed), or ``"permute"`` (rows time-shuffled with a stable
+            per-sample seed).  Evaluation-arm knob; requires
+            ``num_history_actions > 0``.
     """
 
     def __init__(
@@ -200,6 +220,8 @@ class OpenHMixedLeRobotDataset(Dataset):
         viewpoint: str = "third_person_view",
         default_storage_fps: float = 30.0,
         max_retries_per_sample: int = 16,
+        num_history_actions: int = 0,
+        history_ablation: str | None = None,
     ) -> None:
         from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
             EMBODIMENT_REGISTRY,
@@ -217,10 +239,15 @@ class OpenHMixedLeRobotDataset(Dataset):
         self._default_storage_fps = float(default_storage_fps)
         self._max_retries_per_sample = int(max_retries_per_sample)
 
+        validate_history_args(num_history_actions, history_ablation)
+        self.num_history_actions = int(num_history_actions)
+        self.history_ablation = history_ablation
+
         self.sub_datasets: list[WrappedLeRobotSingleDataset] = []
         self.mix_ratios: list[float] = []
         self.embodiment_tags: list[str] = []
         self.domain_ids: list[int] = []
+        self.dataset_paths: list[str] = []
         self.effective_fps_per_dataset: list[int] = []
 
         log.info("=" * 80)
@@ -245,6 +272,7 @@ class OpenHMixedLeRobotDataset(Dataset):
                 num_frames=num_frames,
                 embodiment=embodiment,
                 downscaled_res=downscaled_res,
+                num_history_actions=self.num_history_actions,
             )
 
             modality_filename = None
@@ -290,6 +318,7 @@ class OpenHMixedLeRobotDataset(Dataset):
             self.mix_ratios.append(mix_ratio)
             self.embodiment_tags.append(embodiment)
             self.domain_ids.append(get_domain_id(embodiment))
+            self.dataset_paths.append(str(path))
             registry_entry = EMBODIMENT_REGISTRY.get(embodiment, {})
             if registry_entry:
                 effective_fps = _effective_fps_from_registry(
@@ -450,6 +479,31 @@ class OpenHMixedLeRobotDataset(Dataset):
         sub = self.sub_datasets[dataset_idx]
         return LeRobotSingleDataset.__getitem__(sub, real_idx)
 
+    def get_step_ids(self, idx: int) -> dict[str, Any]:
+        """Stable provenance identifiers for the sample at virtual index ``idx``.
+
+        Mirrors ``__getitem__``'s virtual-index resolution exactly, then reads
+        the underlying ``(trajectory_id, base_index)`` from the sub-dataset's
+        step table.  Used by the CAMP Phase-2 memory-track exporter to key
+        exported codes collision-proof — ``dataset_path`` (not its basename;
+        36 leaves share names) + ``episode_id`` + ``base_index``.
+
+        Deliberately NOT part of the training sample dict, so the training
+        data contract is untouched.
+        """
+        idx = int(idx) % len(self)
+        dataset_idx = int(np.searchsorted(self._cumulative_sizes, idx, side="right"))
+        local_idx = idx if dataset_idx == 0 else idx - int(self._cumulative_sizes[dataset_idx - 1])
+        real_idx = local_idx % len(self.sub_datasets[dataset_idx])
+        trajectory_id, base_index = self.sub_datasets[dataset_idx].all_steps[real_idx]
+        return {
+            "dataset_idx": dataset_idx,
+            "dataset_path": self.dataset_paths[dataset_idx],
+            "embodiment": self.embodiment_tags[dataset_idx],
+            "episode_id": int(trajectory_id),
+            "base_index": int(base_index),
+        }
+
     def __getitem__(self, idx: int) -> dict[str, Any]:  # noqa: C901
         idx = int(idx) % len(self)
 
@@ -479,6 +533,22 @@ class OpenHMixedLeRobotDataset(Dataset):
                         f"returned action with D={action.shape[-1]} > max_action_dim={self.max_action_dim}"
                     )
 
+                # CAMP Phase 1: the transformed action tensor is (H + N, D) —
+                # split off the H history rows (clean conditioning) from the N
+                # current rows (the public 12x44 contract, unchanged). The
+                # ablation seed is stable per (sub-dataset, sample) so eval
+                # permutations are reproducible across epochs and workers.
+                history_action: torch.Tensor | None = None
+                if self.num_history_actions > 0:
+                    history_action, action = split_history_and_current(
+                        action, self.num_history_actions
+                    )
+                    history_action = apply_history_ablation(
+                        history_action,
+                        self.history_ablation,
+                        seed=history_ablation_seed(dataset_idx, real_idx),
+                    )
+
                 video = self._format_video(outputs["video"])
 
                 ai_caption = ""
@@ -497,7 +567,7 @@ class OpenHMixedLeRobotDataset(Dataset):
                 )
                 domain_id = torch.tensor(self.domain_ids[dataset_idx], dtype=torch.long)
 
-                return {
+                sample: dict[str, Any] = {
                     "ai_caption": ai_caption,
                     "video": video,
                     "action": action,
@@ -506,6 +576,13 @@ class OpenHMixedLeRobotDataset(Dataset):
                     "domain_id": domain_id,
                     "viewpoint": self.viewpoint,
                 }
+                # Only present when H > 0 so the H=0 sample dict stays
+                # byte-identical to the pre-CAMP contract. The framework
+                # ActionTransformPipeline pops this key, prepends it to
+                # "action", and marks the rows as clean conditioning.
+                if history_action is not None:
+                    sample["history_action"] = history_action
+                return sample
             except Exception as e:
                 attempt += 1
                 if attempt > self._max_retries_per_sample:

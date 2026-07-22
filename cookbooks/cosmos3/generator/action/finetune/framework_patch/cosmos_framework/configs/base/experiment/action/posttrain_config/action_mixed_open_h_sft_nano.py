@@ -141,6 +141,24 @@ if _MODE_OVERRIDE:
         )
     _MODE_RATIOS = {mode: int(mode == _MODE_OVERRIDE) for mode in _MODE_RATIOS}
 
+# ---------------------------------------------------------------------------
+# CAMP Phase-1 knobs — raw recent-history conditioning (arms B and C).
+#
+#   COSMOS_OPENH_NUM_HISTORY_ACTIONS  H rows of executed-action history per
+#                                     sample (0 = arm-A/base behavior, 16 =
+#                                     the CAMP recipe). The pinned framework
+#                                     ActionTransformPipeline prepends them as
+#                                     clean conditioning (zero noise/loss).
+#   COSMOS_OPENH_HISTORY_ABLATION     unset/'' = real history; 'zero' or
+#                                     'permute' for the Phase-5 eval arms.
+#
+# Env-gated (like COSMOS_OPENH_MODE_OVERRIDE) so all arms launch from ONE
+# registered experiment with identical data/recipe wiring — the arms differ
+# only by these env vars and the run name.
+# ---------------------------------------------------------------------------
+_NUM_HISTORY_ACTIONS = int(os.environ.get("COSMOS_OPENH_NUM_HISTORY_ACTIONS", "0"))
+_HISTORY_ABLATION = os.environ.get("COSMOS_OPENH_HISTORY_ABLATION") or None
+
 
 def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, iterable_shuffle: bool):
     """One Open-H mixture dataset bound to a single action ``mode``.
@@ -174,6 +192,8 @@ def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, itera
         iterable_shuffle=iterable_shuffle,
         episode_shuffle_seed=42,
         tokenizer_config="${model.config.vlm_config.tokenizer}",
+        num_history_actions=_NUM_HISTORY_ACTIONS,
+        history_ablation=_HISTORY_ABLATION,
     )
 
 

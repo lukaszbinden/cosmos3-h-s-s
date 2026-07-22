@@ -129,6 +129,8 @@ def get_action_openh_sft_dataset(
     format_prompt_as_json: bool = False,
     iterable_shuffle: bool = True,
     episode_shuffle_seed: int = 42,
+    num_history_actions: int = 0,
+    history_ablation: str | None = None,
 ) -> Dataset:
     """Build the Open-H multi-embodiment 44D action SFT dataset.
 
@@ -138,6 +140,14 @@ def get_action_openh_sft_dataset(
     re-roots every spec under a caller-provided directory (``DATASET_PATH`` /
     ``OPENH_SURGICAL_ROOT``) and is ``None`` to use the registry's absolute
     paths verbatim.
+
+    CAMP Phase 1: ``num_history_actions`` > 0 makes the base dataset emit a
+    per-sample ``"history_action"`` tensor (H rows at the embodiment's native
+    width, same transforms/normalization as the current window).  The
+    ``ActionTransformPipeline`` (pinned framework) concatenates it ahead of
+    ``"action"``, pads the combined tensor to ``max_action_dim``, and builds
+    the sequence plan with the H rows as clean conditioning (zero noise, zero
+    loss).  ``history_ablation`` (``zero`` / ``permute``) is an eval-arm knob.
     """
     specs = get_open_h_multi_train_specs(base_path=base_path)
     base = OpenHMixedLeRobotDataset(
@@ -151,6 +161,8 @@ def get_action_openh_sft_dataset(
         viewpoint=viewpoint,
         default_storage_fps=default_storage_fps,
         max_retries_per_sample=max_retries_per_sample,
+        num_history_actions=num_history_actions,
+        history_ablation=history_ablation,
     )
     transform = ActionTransformPipeline(
         tokenizer_config=tokenizer_config,

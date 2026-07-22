@@ -15,6 +15,7 @@
 
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import ModalityConfig
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
+from cosmos_framework.data.vfm.action.gr00t_dreams.data.history_utils import build_action_delta_indices
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.transform.base import ComposedModalityTransform
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.transform.concat import ConcatTransform
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.transform.state_action import (
@@ -1214,6 +1215,7 @@ def _build_generic_config_and_transforms(
     num_frames: int,
     reg: dict,
     downscaled_res: bool = False,
+    num_history_actions: int = 0,
 ) -> tuple[dict, ComposedModalityTransform, ComposedModalityTransform]:
     """Build modality config and transforms for a generic (non-CMR) Open-H embodiment.
 
@@ -1240,12 +1242,18 @@ def _build_generic_config_and_transforms(
     """
     timestep_interval = reg["timestep_interval"]
 
-    # Video: all num_frames frames
+    # Video: all num_frames frames (NEVER extended by history — only the
+    # action stream gets the H extra conditioning rows).
     video_delta_indices = list(range(0, num_frames * timestep_interval, timestep_interval))
 
-    # Action: num_frames - 1 action timesteps (prediction frames only)
+    # Action: num_frames - 1 current timesteps, optionally preceded by
+    # num_history_actions history timesteps at the same stride (CAMP Phase 1).
+    # With num_history_actions=0 this is byte-identical to the legacy
+    # range(0, (num_frames-1)*ti, ti).
     num_action_frames = num_frames - 1
-    action_delta_indices = list(range(0, num_action_frames * timestep_interval, timestep_interval))
+    action_delta_indices = build_action_delta_indices(
+        timestep_interval, num_action_frames, num_history_actions
+    )
 
     config = {
         "video": ModalityConfig(
@@ -1353,7 +1361,20 @@ def _build_generic_config_and_transforms(
     return config, train_transform, test_transform
 
 
-def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_res=False):
+def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_res=False, num_history_actions=0):
+    # CAMP Phase-1 history is implemented for the Open-H mixture only: every
+    # EMBODIMENT_REGISTRY entry plus the dedicated cmr_versius / suturebot
+    # branches. The legacy gr00t embodiments (gr1, agibot, ...) never
+    # participate in the Open-H specs — fail closed rather than silently
+    # returning history-free configs for them.
+    if num_history_actions:
+        supported = embodiment in EMBODIMENT_REGISTRY or embodiment in ("cmr_versius", "suturebot")
+        if not supported:
+            raise ValueError(
+                f"num_history_actions={num_history_actions} is not supported for legacy "
+                f"embodiment {embodiment!r}; only EMBODIMENT_REGISTRY entries, "
+                "'cmr_versius', and 'suturebot' have history-extended configs."
+            )
     if embodiment == "gr1":
         timestep_interval = 2
         delta_indices = list(range(0, num_frames * timestep_interval, timestep_interval))
@@ -1452,7 +1473,7 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
         # Original data is 60Hz, using FRAME_STRIDE=6 for 10fps effective rate
         timestep_interval = 6
 
-        # Video: 13 frames (1 context + 12 prediction)
+        # Video: 13 frames (1 context + 12 prediction) — never history-extended
         video_delta_indices = list(range(0, num_frames * timestep_interval, timestep_interval))
 
         # Action: 12 timesteps (only for the 12 prediction frames, not context)
@@ -1460,8 +1481,18 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
         # 12 actions / 4 = 3 latent temporal positions, each getting action embedding
         # Note: action timesteps start from index 0 (same as video context frame) because
         # the action at t=0 represents the transition FROM frame 0 TO frame 1
+        #
+        # CAMP Phase 1: num_history_actions extra rows are prepended at the same
+        # stride (negative deltas). This extends BOTH the 30D action keys and the
+        # 14D action.cond_* state-conditioning keys (they share this modality).
+        # The pose transform's cumulative re-integration telescopes over the
+        # extended window (the engagement gate broadcasts from the length-1
+        # anchor state), so the current 12 rows remain byte-identical to H=0 —
+        # asserted by tests/test_phase1_history.py::TestCmrTelescoping.
         num_action_frames = num_frames - 1  # 12 action timesteps for 13 video frames
-        action_delta_indices = list(range(0, num_action_frames * timestep_interval, timestep_interval))
+        action_delta_indices = build_action_delta_indices(
+            timestep_interval, num_action_frames, num_history_actions
+        )
 
         config = {
             "video": ModalityConfig(
@@ -1549,6 +1580,11 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
     elif embodiment == "suturebot":
         timestep_interval = 3
         delta_indices = list(range(0, num_frames * timestep_interval, timestep_interval))
+        # NOTE: suturebot's current action window spans num_frames steps (not
+        # num_frames - 1 like the Open-H recipe) — the sequence-plan builder's
+        # "action length == video length" convention. History extends it
+        # backward at the same stride. Untested against real data (no Open-H
+        # spec uses this tag); kept consistent for completeness.
         config = {
             "video": ModalityConfig(
                 delta_indices=delta_indices,
@@ -1559,7 +1595,9 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
                 modality_keys=["state.observation.state"],
             ),
             "action": ModalityConfig(
-                delta_indices=delta_indices,
+                delta_indices=build_action_delta_indices(
+                    timestep_interval, num_frames, num_history_actions
+                ),
                 modality_keys=["action.action"],
             ),
         }
@@ -1568,7 +1606,9 @@ def construct_modality_config_and_transforms(num_frames, embodiment, downscaled_
     # Registry-based embodiments (all non-CMR Open-H datasets)
     # =========================================================================
     if embodiment in EMBODIMENT_REGISTRY:
-        return _build_generic_config_and_transforms(num_frames, EMBODIMENT_REGISTRY[embodiment], downscaled_res)
+        return _build_generic_config_and_transforms(
+            num_frames, EMBODIMENT_REGISTRY[embodiment], downscaled_res, num_history_actions
+        )
 
     video_modality, state_modality, action_modality = config["video"], config["state"], config["action"]
     if embodiment == "gr1" or embodiment == "gr1_video_only":
