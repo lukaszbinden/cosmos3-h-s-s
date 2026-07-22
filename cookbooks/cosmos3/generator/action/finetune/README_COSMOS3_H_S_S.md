@@ -695,6 +695,54 @@ base to fresh 44D heads and must not be reused here.
 cross-check, effective-FPS source coverage) activate automatically inside
 the workspace training env.
 
+**Implementation status (2026-07-22)** — Phases 1–3 are CODE-COMPLETE on
+this branch (129 local tests passing; run the suite with the command above):
+
+- **Phase 1 (`619419f`)** — `num_history_actions` / `history_ablation`
+  through the full data path (`history_utils.py`, `groot_configs.py`,
+  `open_h_dataset.py`, SFT wrapper, experiment config). Launch arms via env:
+  `COSMOS_OPENH_NUM_HISTORY_ACTIONS=16` (+ `COSMOS_OPENH_HISTORY_ABLATION=
+  zero|permute` for eval arms). The pinned framework rail does the rest
+  (`history_action` → concat → pad → clean-conditioning sequence plan).
+  CMR clutch filter + caches key on the CURRENT window only, so H=0/H16
+  sample sets are identical and existing caches stay valid. The CMR pose
+  re-integration provably telescopes: current rows are byte-identical
+  across arms (tested).
+- **Phase 2 (`9d5dc14`)** — `camp_action_memory.py`: verbatim SutureBot
+  CAMP-v2 port (DCT scaffold, losses, hardened VQ) +
+  `MultiEmbodimentActionMemoryEncoder` (one shared encoder, embodiment
+  embedding, masked canonical 20D state + prev 44D action input,
+  code_dim=132). Strict causality and offline==online agreement tested.
+- **Phase 3 (`dad8657`)** — `camp_injection.py` + `camp_transforms.py`:
+  `CampActionTransformPipeline` injects the reshaped (3, 44) code AFTER
+  the base normalize/pad, rebuilds the plan with 19 conditioning rows.
+
+**Remaining, in order (all cluster-side):**
+
+1. **Gate-0 checks** — byte-identical H=0 reproduction at `a3d6f89`; base
+   checkpoint loads under the pinned framework.
+2. **Phase 1 on real leaves** — one smoke pass per leaf class (dual-arm,
+   single-arm, MIRA deltas, CMR clutch, no-gripper, episode starts) with
+   `COSMOS_OPENH_NUM_HISTORY_ACTIONS=16`; then arms A/B can launch.
+3. **Phase 2b** — per-leaf canonical-state extraction table (verify against
+   the modality audit), memory pretraining run, code exporter keyed by
+   `OpenHMixedLeRobotDataset.get_step_ids()` (full dataset paths — 36
+   leaves share basenames) with the manifest fields from the plan.
+4. **Phase 3b — REQUIRED BEFORE ARM C** on narrow embodiments: the pinned
+   model zeroes padded action-INPUT channels per sample
+   (`omni_mot_model.py` xt-noising site ~L1557 and sampling-init site
+   ~L1804: `xt_action[i][:, raw_action_dim[i]:] = 0`). Native rows are
+   unaffected (padded channels already zero) but dense 44-wide memory rows
+   would be silently truncated for raw_action_dim < 44. Fix: guarded
+   exemption skipping the first `num_memory_action_rows[i]` rows at those
+   two sites (field already emitted by `CampActionTransformPipeline`;
+   plumb through `data_and_condition.py` like `raw_action_dim`). The loss
+   (`flow_matching.py` sqerr slice) and velocity sites are already
+   row-masked for conditioning rows — no change needed there.
+   `inject_memory_rows` FAILS CLOSED on raw_action_dim < 44 until this
+   lands, so a mis-wired arm C crashes rather than trains on a truncated
+   code. Arms A/B are unaffected.
+
 **Roadmap after Gate 0** (agreed plan, condensed):
 
 1. **Phase 1 — history**: `num_history_actions=16` +
