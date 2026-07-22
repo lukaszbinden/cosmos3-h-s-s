@@ -159,6 +159,19 @@ if _MODE_OVERRIDE:
 _NUM_HISTORY_ACTIONS = int(os.environ.get("COSMOS_OPENH_NUM_HISTORY_ACTIONS", "0"))
 _HISTORY_ABLATION = os.environ.get("COSMOS_OPENH_HISTORY_ABLATION") or None
 
+# CAMP Phase-3 knobs — learned-memory conditioning (arm C).
+#
+#   COSMOS_OPENH_CAMP_MEMORY_TRACKS   exported-tracks root dir, or the literal
+#                                     '__random__' for deterministic debug
+#                                     codes (packing/plumbing smokes only).
+#                                     Unset = no memory (arms A/B).
+#   COSMOS_OPENH_MEMORY_ABLATION      unset/'' = real codes; 'zero' or
+#                                     'shuffle_episode' for the Phase-5 grid.
+#
+# Arm recipes:  A: neither var;  B: H=16 only;  C: H=16 + memory tracks.
+_CAMP_MEMORY_TRACKS = os.environ.get("COSMOS_OPENH_CAMP_MEMORY_TRACKS") or None
+_MEMORY_ABLATION = os.environ.get("COSMOS_OPENH_MEMORY_ABLATION") or None
+
 
 def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, iterable_shuffle: bool):
     """One Open-H mixture dataset bound to a single action ``mode``.
@@ -194,6 +207,8 @@ def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, itera
         tokenizer_config="${model.config.vlm_config.tokenizer}",
         num_history_actions=_NUM_HISTORY_ACTIONS,
         history_ablation=_HISTORY_ABLATION,
+        camp_memory_tracks_root=_CAMP_MEMORY_TRACKS,
+        camp_memory_ablation=_MEMORY_ABLATION,
     )
 
 

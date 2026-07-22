@@ -339,6 +339,7 @@ def _make_stub_dataset(oh, h: int, ablation: str | None, raw_t: int, d: int = 20
     ds._max_retries_per_sample = 1
     ds.num_history_actions = h
     ds.history_ablation = ablation
+    ds.emit_step_ids = False
     ds.embodiment_tags = ["jhu_dvrk_mono"]
     ds.domain_ids = [7]
     ds.dataset_paths = ["/data/fake/leaf"]

@@ -28,6 +28,8 @@ from typing import Any
 
 from torch.utils.data import Dataset
 
+from cosmos_framework.data.vfm.action.camp_memory_tracks import CampMemoryTrackJoiner
+from cosmos_framework.data.vfm.action.camp_transforms import CampActionTransformPipeline
 from cosmos_framework.data.vfm.action.datasets.action_sft_dataset import (
     ActionIterableShuffleDataset,
     ActionSFTDataset,
@@ -53,7 +55,7 @@ class _OpenHShuffleBlockAdapter(Dataset):
     sequential parquet reads) while decorrelating across sub-datasets.
     """
 
-    def __init__(self, dataset: OpenHMixedLeRobotDataset) -> None:
+    def __init__(self, dataset: OpenHMixedLeRobotDataset | CampMemoryTrackJoiner) -> None:
         super().__init__()
         self._dataset = dataset
 
@@ -131,6 +133,8 @@ def get_action_openh_sft_dataset(
     episode_shuffle_seed: int = 42,
     num_history_actions: int = 0,
     history_ablation: str | None = None,
+    camp_memory_tracks_root: str | None = None,
+    camp_memory_ablation: str | None = None,
 ) -> Dataset:
     """Build the Open-H multi-embodiment 44D action SFT dataset.
 
@@ -148,6 +152,14 @@ def get_action_openh_sft_dataset(
     ``"action"``, pads the combined tensor to ``max_action_dim``, and builds
     the sequence plan with the H rows as clean conditioning (zero noise, zero
     loss).  ``history_ablation`` (``zero`` / ``permute``) is an eval-arm knob.
+
+    CAMP Phase 3 (arm C): ``camp_memory_tracks_root`` switches the stack to
+    memory-conditioned mode — the base dataset emits retry-safe step ids, a
+    ``CampMemoryTrackJoiner`` attaches the per-sample 132D ``memory_code``
+    (from exported tracks, or deterministic debug codes when the root is
+    ``"__random__"``), and ``CampActionTransformPipeline`` injects the 3 x 44
+    code rows with 19-row conditioning plans.  ``camp_memory_ablation``
+    (``zero`` / ``shuffle_episode``) is the Phase-5 eval grid.
     """
     specs = get_open_h_multi_train_specs(base_path=base_path)
     base = OpenHMixedLeRobotDataset(
@@ -163,8 +175,24 @@ def get_action_openh_sft_dataset(
         max_retries_per_sample=max_retries_per_sample,
         num_history_actions=num_history_actions,
         history_ablation=history_ablation,
+        emit_step_ids=camp_memory_tracks_root is not None,
     )
-    transform = ActionTransformPipeline(
+    inner: Dataset = base
+    if camp_memory_tracks_root is not None:
+        inner = CampMemoryTrackJoiner(
+            base,
+            tracks_root=camp_memory_tracks_root,
+            memory_ablation=camp_memory_ablation,
+        )
+    elif camp_memory_ablation is not None:
+        raise ValueError(
+            "camp_memory_ablation requires camp_memory_tracks_root — an ablation "
+            "with no memory source would silently be a no-op."
+        )
+    pipeline_cls = (
+        CampActionTransformPipeline if camp_memory_tracks_root is not None else ActionTransformPipeline
+    )
+    transform = pipeline_cls(
         tokenizer_config=tokenizer_config,
         cfg_dropout_rate=cfg_dropout_rate,
         keep_aspect_ratio=keep_aspect_ratio,
@@ -179,7 +207,7 @@ def get_action_openh_sft_dataset(
         idle_frames_dropout=idle_frames_dropout,
         format_prompt_as_json=format_prompt_as_json,
     )
-    sft = ActionSFTDataset(_OpenHShuffleBlockAdapter(base), transform, resolution)
+    sft = ActionSFTDataset(_OpenHShuffleBlockAdapter(inner), transform, resolution)
     if iterable_shuffle:
         return ActionIterableShuffleDataset(sft, seed=episode_shuffle_seed)
     return sft

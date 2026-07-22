@@ -754,11 +754,27 @@ this branch (129 local tests passing; run the suite with the command above):
    Contingency if the packer requires x4: pad one zero conditioning row
    (32 = 4 x 8) or move the contract to 4 memory slots (CODE_DIM 176) —
    either is a camp_data_contract.py change plus memory re-export.
-6. **Still unwired for arm C**: the memory-track joiner (per-sample
-   ``memory_code`` lookup from exported tracks, keyed by
-   ``get_step_ids()``) and the experiment-config switch to
-   ``CampActionTransformPipeline``. Blocked behind the Phase-2b exporter
-   anyway (there are no tracks to join yet).
+6. **Arm-C wiring: DONE.** ``camp_memory_tracks.py`` defines the exported
+   track contract (``<basename>-<sha1(path)[:10]>/manifest.json`` +
+   ``episode_<id>.npy``; the tests are the executable spec the Phase-2b
+   exporter must write to) and ``CampMemoryTrackJoiner`` attaches the
+   per-sample ``memory_code`` via retry-safe step ids (the base getitem
+   REROLLS indices on failure — ids are emitted inside the successful
+   attempt; never join via ``get_step_ids()`` after the fact).
+   ``get_action_openh_sft_dataset`` switches to
+   ``CampActionTransformPipeline`` when
+   ``COSMOS_OPENH_CAMP_MEMORY_TRACKS`` is set (exported-tracks dir, or the
+   literal ``__random__`` for deterministic debug codes — smokes only);
+   ``COSMOS_OPENH_MEMORY_ABLATION=zero|shuffle_episode`` is the Phase-5
+   grid (``shuffle_episode`` = the cross-episode null detector). Arm
+   recipes: A = no CAMP env; B = ``COSMOS_OPENH_NUM_HISTORY_ACTIONS=16``;
+   C = B + ``COSMOS_OPENH_CAMP_MEMORY_TRACKS=<tracks|__random__>``.
+7. **Draco smoke launcher**:
+   ``scripts/slurm_camp_smoke_draco.sbatch`` (1 node / 8 GPUs, container +
+   venv per the team Draco runbook; prereqs in its header). ``SMOKE_ARM=C``
+   (default) runs H16 + random-debug memory for ~50 iters — this single job
+   answers the 31-row packing question and behaviorally verifies the
+   Phase-3b exemption. Run ``SMOKE_ARM=B`` and ``A`` for the ladder.
 
 **Venue note:** the smokes and the memory pretraining do not have to wait
 for EOS time — Draco (SLURM account ``healthcareeng_holoscan``; see the

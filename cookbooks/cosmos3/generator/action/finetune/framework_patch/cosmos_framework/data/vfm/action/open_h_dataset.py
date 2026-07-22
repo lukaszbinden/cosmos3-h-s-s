@@ -222,6 +222,7 @@ class OpenHMixedLeRobotDataset(Dataset):
         max_retries_per_sample: int = 16,
         num_history_actions: int = 0,
         history_ablation: str | None = None,
+        emit_step_ids: bool = False,
     ) -> None:
         from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
             EMBODIMENT_REGISTRY,
@@ -242,6 +243,12 @@ class OpenHMixedLeRobotDataset(Dataset):
         validate_history_args(num_history_actions, history_ablation)
         self.num_history_actions = int(num_history_actions)
         self.history_ablation = history_ablation
+        # When True, each sample carries a "_step_ids" dict computed INSIDE
+        # the successful __getitem__ attempt. This is the ONLY safe way to
+        # join per-sample side data (CAMP memory codes): the retry loop
+        # rerolls idx on failure, so ids resolved outside the attempt could
+        # describe a different sample than the one returned.
+        self.emit_step_ids = bool(emit_step_ids)
 
         self.sub_datasets: list[WrappedLeRobotSingleDataset] = []
         self.mix_ratios: list[float] = []
@@ -479,6 +486,17 @@ class OpenHMixedLeRobotDataset(Dataset):
         sub = self.sub_datasets[dataset_idx]
         return LeRobotSingleDataset.__getitem__(sub, real_idx)
 
+    def _step_ids_for(self, dataset_idx: int, real_idx: int) -> dict[str, Any]:
+        """Provenance ids for a resolved (sub-dataset, sample) pair."""
+        trajectory_id, base_index = self.sub_datasets[dataset_idx].all_steps[real_idx]
+        return {
+            "dataset_idx": dataset_idx,
+            "dataset_path": self.dataset_paths[dataset_idx],
+            "embodiment": self.embodiment_tags[dataset_idx],
+            "episode_id": int(trajectory_id),
+            "base_index": int(base_index),
+        }
+
     def get_step_ids(self, idx: int) -> dict[str, Any]:
         """Stable provenance identifiers for the sample at virtual index ``idx``.
 
@@ -488,21 +506,17 @@ class OpenHMixedLeRobotDataset(Dataset):
         exported codes collision-proof — ``dataset_path`` (not its basename;
         36 leaves share names) + ``episode_id`` + ``base_index``.
 
-        Deliberately NOT part of the training sample dict, so the training
-        data contract is untouched.
+        NOTE: __getitem__ RETRIES with a rerolled index on per-sample
+        failures, so this method must not be used to join side data onto
+        fetched samples — construct the dataset with ``emit_step_ids=True``
+        and read the sample's ``"_step_ids"`` instead (computed inside the
+        successful attempt).
         """
         idx = int(idx) % len(self)
         dataset_idx = int(np.searchsorted(self._cumulative_sizes, idx, side="right"))
         local_idx = idx if dataset_idx == 0 else idx - int(self._cumulative_sizes[dataset_idx - 1])
         real_idx = local_idx % len(self.sub_datasets[dataset_idx])
-        trajectory_id, base_index = self.sub_datasets[dataset_idx].all_steps[real_idx]
-        return {
-            "dataset_idx": dataset_idx,
-            "dataset_path": self.dataset_paths[dataset_idx],
-            "embodiment": self.embodiment_tags[dataset_idx],
-            "episode_id": int(trajectory_id),
-            "base_index": int(base_index),
-        }
+        return self._step_ids_for(dataset_idx, real_idx)
 
     def __getitem__(self, idx: int) -> dict[str, Any]:  # noqa: C901
         idx = int(idx) % len(self)
@@ -582,6 +596,12 @@ class OpenHMixedLeRobotDataset(Dataset):
                 # "action", and marks the rows as clean conditioning.
                 if history_action is not None:
                     sample["history_action"] = history_action
+                # Computed HERE (inside the successful attempt) so the ids
+                # always describe the sample actually returned — the except
+                # path below rerolls idx. Consumed (popped) by
+                # CampMemoryTrackJoiner; never reaches the training batch.
+                if self.emit_step_ids:
+                    sample["_step_ids"] = self._step_ids_for(dataset_idx, real_idx)
                 return sample
             except Exception as e:
                 attempt += 1

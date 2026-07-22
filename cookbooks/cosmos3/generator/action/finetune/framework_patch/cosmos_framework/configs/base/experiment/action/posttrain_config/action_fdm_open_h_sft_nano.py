@@ -63,11 +63,17 @@ from cosmos_framework.data.vfm.action.datasets.openh_sft_dataset import get_acti
 # mis-launched arm silently train without history.
 import os as _os
 
-if _os.environ.get("COSMOS_OPENH_NUM_HISTORY_ACTIONS") or _os.environ.get("COSMOS_OPENH_HISTORY_ABLATION"):
+_CAMP_ENV_VARS = (
+    "COSMOS_OPENH_NUM_HISTORY_ACTIONS",
+    "COSMOS_OPENH_HISTORY_ABLATION",
+    "COSMOS_OPENH_CAMP_MEMORY_TRACKS",
+    "COSMOS_OPENH_MEMORY_ABLATION",
+)
+if any(_os.environ.get(v) for v in _CAMP_ENV_VARS):
     raise RuntimeError(
-        "COSMOS_OPENH_NUM_HISTORY_ACTIONS / COSMOS_OPENH_HISTORY_ABLATION are set, "
-        "but the FD-only experiment (action_fdm_open_h_sft_nano) does not support "
-        "CAMP history. Launch CAMP arms via action_mixed_open_h_sft_nano."
+        f"One of {_CAMP_ENV_VARS} is set, but the FD-only experiment "
+        "(action_fdm_open_h_sft_nano) does not support CAMP history/memory. "
+        "Launch CAMP arms via action_mixed_open_h_sft_nano."
     )
 
 cs = ConfigStore.instance()
