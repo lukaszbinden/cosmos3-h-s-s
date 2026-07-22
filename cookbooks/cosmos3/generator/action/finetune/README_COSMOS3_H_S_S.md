@@ -717,6 +717,54 @@ this branch (129 local tests passing; run the suite with the command above):
   `CampActionTransformPipeline` injects the reshaped (3, 44) code AFTER
   the base normalize/pad, rebuilds the plan with 19 conditioning rows.
 
+**Arm B on Draco (6 nodes / 48 GPUs).** Point the dedicated launcher at the
+trained **44D Arm-A** checkpoint (not public 64D Cosmos3-Nano), smoke the real
+H16 path on one node, then submit the production array. The current approved
+warm-start is:
+`/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/users/lzbinden/checkpoints/cosmos3-h-surgical-omni-base/iter_000015000`.
+
+```bash
+source env.sh
+sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_smoke_camp_arm_b_draco.sbatch
+# After the smoke reaches iter 10 and writes its checkpoint:
+sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_train_camp_arm_b_draco.sbatch
+```
+
+The path above is the launcher default. If a newer approved Arm-A checkpoint
+supersedes it, set `ARM_A_CHECKPOINT_PATH=/new/iter_N` before submission.
+Arm C must use the same Arm-A warm-start; the shared CAMP smoke launcher now
+mounts this checkpoint explicitly and clears `checkpoint.keys_to_skip_loading`
+so none of the trained 44D action heads are reinitialized.
+
+The production launcher fixes `COSMOS_OPENH_NUM_HISTORY_ACTIONS=16`, rejects
+history ablations, loads **all** trained 44D action heads
+(`checkpoint.keys_to_skip_loading=[]`), and writes to the isolated
+`action_open_h_camp/camp-arm-b-h16-<arm-a-iteration>` run directory. Including
+the Arm-A checkpoint tag prevents an older Arm-B run from cross-resuming after
+the approved warm-start changes. Its sequential 12-task Slurm array auto-resumes
+only Arm B's own optimizer/scheduler/EMA state.
+
+**Warm-start audit across Draco's 4-hour segments.** The first Arm-B segment
+atomically writes `arm_a_warmstart_attempt.env` in the Arm-B run directory and
+logs `WARMSTART_DECISION=WARMSTART_ARM_A_ONCE`, the exact Arm-A path, its
+`model/.metadata` SHA-256, `LOAD_ALL_44D_ACTION_HEADS=true`, and
+`LOAD_ARM_A_TRAINING_STATE=false`. Once Arm B writes its own
+`latest_checkpoint.txt`, every later array segment logs:
+
+```text
+WARMSTART_DECISION=RESUME_ARM_B
+WARMSTART_CONFIRMED_BY_ARM_B_CHECKPOINT=true
+ARM_A_CHECKPOINT_REAPPLIED=false
+RESUME_SOURCE=<Arm-B checkpoint>
+```
+
+If a warm-start marker exists but no Arm-B checkpoint was produced, the next
+segment fails instead of silently applying Arm A again. Inspect the first log;
+only remove the marker manually when deliberately restarting Arm B from Arm A.
+The Arm-C smoke logs the same source checkpoint, metadata hash, all-head load,
+and model-only warm-start. A future resumable Arm-C production launcher must
+use the same marker/own-checkpoint guard.
+
 **Remaining, in order (all cluster-side):**
 
 1. **Gate-0 checks** — byte-identical H=0 reproduction at `a3d6f89`; base
