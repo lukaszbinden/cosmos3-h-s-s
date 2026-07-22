@@ -35,6 +35,7 @@ velocity sites are already row-masked for conditioning rows),
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any, Callable
 
 import torch
@@ -44,6 +45,20 @@ from cosmos_framework.data.vfm.action.camp_data_contract import (
     CODE_DIM,
     NUM_MEMORY_SLOTS,
 )
+
+
+def model_memory_row_patch_present() -> bool:
+    """True when the Phase-3b model-side exemption is installed.
+
+    Detects the overlay-patched ``GenerationDataClean.num_memory_action_rows``
+    field. On an unpatched framework the model would channel-truncate dense
+    memory rows for raw_action_dim < 44, so injection must fail closed there.
+    """
+    try:
+        from cosmos_framework.model.vfm.utils.data_and_condition import GenerationDataClean
+    except Exception:
+        return False
+    return any(f.name == "num_memory_action_rows" for f in dataclasses.fields(GenerationDataClean))
 
 
 def inject_memory_rows(
@@ -86,14 +101,15 @@ def inject_memory_rows(
 
     if raw_action_dim is not None:
         raw = int(raw_action_dim.item() if isinstance(raw_action_dim, torch.Tensor) else raw_action_dim)
-        if raw < ACTION_DIM:
+        if raw < ACTION_DIM and not model_memory_row_patch_present():
             raise ValueError(
-                f"Memory injection with raw_action_dim={raw} < {ACTION_DIM} would let the "
-                "model-side padded-channel zeroing truncate the dense memory rows "
-                "(omni_mot_model.py noising/sampling-init sites). This requires the "
-                "Phase-3b guarded exemption (skip the first num_memory_action_rows "
-                "rows at those sites). Failing closed rather than training on a "
-                "silently truncated code."
+                f"Memory injection with raw_action_dim={raw} < {ACTION_DIM} on an UNPATCHED "
+                "framework would let the model-side padded-channel zeroing truncate the "
+                "dense memory rows (omni_mot_model.py noising/sampling-init sites). "
+                "Apply the Phase-3b overlay (framework_patch/cosmos_framework/model/vfm/"
+                "omni_mot_model.py + utils/data_and_condition.py) — detected via "
+                "GenerationDataClean.num_memory_action_rows. Failing closed rather than "
+                "training on a silently truncated code."
             )
 
     code = memory_code

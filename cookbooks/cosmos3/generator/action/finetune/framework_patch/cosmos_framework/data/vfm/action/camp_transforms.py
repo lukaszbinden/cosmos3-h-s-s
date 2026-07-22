@@ -104,5 +104,6 @@ class CampActionTransformPipeline(ActionTransformPipeline):
         data_dict["sequence_plan"] = new_plan
         # Consumed by the Phase-3b model patch: exempt the first M action rows
         # from per-sample padded-channel zeroing (they carry the dense code).
-        data_dict["num_memory_action_rows"] = NUM_MEMORY_SLOTS
+        # Long tensor to mirror raw_action_dim's emission/collation exactly.
+        data_dict["num_memory_action_rows"] = torch.tensor(NUM_MEMORY_SLOTS, dtype=torch.long)
         return data_dict

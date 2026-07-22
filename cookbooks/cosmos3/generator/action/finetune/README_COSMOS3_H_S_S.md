@@ -728,20 +728,23 @@ this branch (129 local tests passing; run the suite with the command above):
    the modality audit), memory pretraining run, code exporter keyed by
    `OpenHMixedLeRobotDataset.get_step_ids()` (full dataset paths — 36
    leaves share basenames) with the manifest fields from the plan.
-4. **Phase 3b — REQUIRED BEFORE ARM C** on narrow embodiments: the pinned
-   model zeroes padded action-INPUT channels per sample
-   (`omni_mot_model.py` xt-noising site ~L1557 and sampling-init site
-   ~L1804: `xt_action[i][:, raw_action_dim[i]:] = 0`). Native rows are
-   unaffected (padded channels already zero) but dense 44-wide memory rows
-   would be silently truncated for raw_action_dim < 44. Fix: guarded
-   exemption skipping the first `num_memory_action_rows[i]` rows at those
-   two sites (field already emitted by `CampActionTransformPipeline`;
-   plumb through `data_and_condition.py` like `raw_action_dim`). The loss
-   (`flow_matching.py` sqerr slice) and velocity sites are already
-   row-masked for conditioning rows — no change needed there.
-   `inject_memory_rows` FAILS CLOSED on raw_action_dim < 44 until this
-   lands, so a mis-wired arm C crashes rather than trains on a truncated
-   code. Arms A/B are unaffected.
+4. **Phase 3b — model-side memory-row exemption: CODE LANDED, cluster
+   verification remains.** The pinned model zeroes padded action-INPUT
+   channels per sample; dense 44-wide memory rows would be silently
+   truncated for raw_action_dim < 44. The overlay now carries patched
+   copies of `model/vfm/omni_mot_model.py` (row-offset guards at the
+   xt-noising and sampling-init sites; velocity/loss sites untouched —
+   already row-masked for conditioning rows) and
+   `model/vfm/utils/data_and_condition.py` (the
+   `num_memory_action_rows` field, plumbed like `raw_action_dim`).
+   `tests/test_phase3b_model_patch.py` enforces DIFF DISCIPLINE: the
+   overlay copies differ from the pinned originals only in
+   marker-bearing lines, both zeroing sites use the row-offset form, and
+   nothing upstream is deleted. `inject_memory_rows` auto-detects the
+   patch (via the dataclass field) and still FAILS CLOSED on
+   raw_action_dim < 44 against an unpatched framework. Behavioral
+   verification (a short arm-C-shaped training smoke) still required
+   before launch. Arms A/B are unaffected.
 5. **Arm-C packing smoke** — the packer lays action tokens inline with
    vision supertokens (`num_action_tokens_per_supertoken = 4`;
    `sequence_packing.py::generate_temporal_causal_natten_metadata`).
@@ -751,6 +754,19 @@ this branch (129 local tests passing; run the suite with the command above):
    Contingency if the packer requires x4: pad one zero conditioning row
    (32 = 4 x 8) or move the contract to 4 memory slots (CODE_DIM 176) —
    either is a camp_data_contract.py change plus memory re-export.
+6. **Still unwired for arm C**: the memory-track joiner (per-sample
+   ``memory_code`` lookup from exported tracks, keyed by
+   ``get_step_ids()``) and the experiment-config switch to
+   ``CampActionTransformPipeline``. Blocked behind the Phase-2b exporter
+   anyway (there are no tracks to join yet).
+
+**Venue note:** the smokes and the memory pretraining do not have to wait
+for EOS time — Draco (SLURM account ``healthcareeng_holoscan``; see the
+team Draco runbook) has a torch-2.7 container that satisfies the
+framework's dependency floor, and the healthcareeng portfolio Lustre tree.
+Re-root the specs via ``DATASET_PATH`` / ``OPENH_SURGICAL_ROOT`` if the
+Open-H staging path differs from the EOS one baked into
+``groot_configs.py``.
 
 **Roadmap after Gate 0** (agreed plan, condensed):
 

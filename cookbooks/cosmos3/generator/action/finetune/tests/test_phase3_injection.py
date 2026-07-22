@@ -135,13 +135,35 @@ class TestInjectMemoryRows:
         )
         assert new_action.dtype == torch.bfloat16
 
-    def test_raw_action_dim_guard_fails_closed(self, plan_builder):
+    def test_raw_action_dim_guard_fails_closed_on_unpatched_framework(
+        self, plan_builder, monkeypatch
+    ):
+        monkeypatch.setattr(ci, "model_memory_row_patch_present", lambda: False)
         with pytest.raises(ValueError, match="Phase-3b"):
             ci.inject_memory_rows(
                 _padded_action(), _code(), mode="policy", video_length=13,
                 num_history_actions=16, sequence_plan_builder=plan_builder,
                 raw_action_dim=torch.tensor(20),
             )
+
+    def test_narrow_raw_dim_passes_when_model_patched(self, plan_builder, monkeypatch):
+        monkeypatch.setattr(ci, "model_memory_row_patch_present", lambda: True)
+        new_action, _ = ci.inject_memory_rows(
+            _padded_action(), _code(), mode="policy", video_length=13,
+            num_history_actions=16, sequence_plan_builder=plan_builder,
+            raw_action_dim=torch.tensor(20),
+        )
+        assert new_action.shape == (31, 44)
+
+    def test_patch_detection_against_overlaid_tree(self):
+        """In the overlaid checkout the dataclass carries the new field, so
+        detection must return True (data_and_condition is torch-only)."""
+        try:
+            assert ci.model_memory_row_patch_present() is True
+        except AssertionError:
+            raise
+        except Exception as e:  # pragma: no cover - environment dependent
+            pytest.skip(f"data_and_condition not importable here: {e}")
 
     @pytest.mark.parametrize("raw", [44, torch.tensor(44), None])
     def test_raw_action_dim_full_width_or_disabled_passes(self, plan_builder, raw):
