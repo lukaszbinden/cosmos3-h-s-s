@@ -637,24 +637,26 @@ Questions: shuver@nvidia.com.*
   warns loudly if any future out-of-registry embodiment would silently fall
   back.
 
-**Step 1 — recover and pin the framework SHA.** Upstream cosmos-framework
+**Step 1 — framework SHA recovered and pinned.** Upstream cosmos-framework
 has reorganised `data.vfm` → `data.generator`; this overlay still targets
 `data.vfm`, so a fresh **unpinned** `setup_workspace.sh` clone will not even
-import. Recover the SHA of the checkout that trained `mm-C3-H-S-S-base`:
+import. The exact checkout that trained `mm-C3-H-S-S-base` was recovered from
+the original EOS workspace on 2026-07-22:
 
 ```bash
-# On EOS, if the original workspace still exists:
-git -C <workspace>/packages/cosmos3 rev-parse HEAD
-# Otherwise: W&B run mm-C3-H-S-S-base (project cosmos3_action_surgical,
-# group action_open_h) -> Overview -> git state.
+300faa14daab3910be9d303c31708a0a1d6e4371
+# 2026-06-22: action dataloader: episode-shuffle stream
+# (fix DROID grad-norm instability) (#37)
 ```
 
-Then either `export COSMOS3_FRAMEWORK_REF=<sha>` before running setup, or
-(better) hard-code it as the default in `scripts/setup_workspace.sh` so the
-pin travels with the branch. Use a full commit SHA, not a branch name. Setup
-records the resolved SHA in `packages/cosmos3-framework.lock` and exports
+Both setup helpers now use that SHA by default. A deliberate
+`COSMOS3_FRAMEWORK_REF=<other-full-sha>` override remains possible; branch
+names and abbreviated SHAs are rejected. Setup records the resolved SHA in
+`packages/cosmos3-framework.lock` and the canonical cookbook helper exports
 `COSMOS3_FRAMEWORK_SHA` via `env.sh`; stamp it into every training/eval
-manifest from here on.
+manifest from here on. W&B run `mm-C3-H-S-S-base` (project
+`cosmos3_action_surgical`, entity `holoscan-advanced-workflow-team`) remains
+the independent provenance cross-check.
 
 **Step 2 — byte-identical H=0 reproduction check.** Run it at commit
 `a3d6f89`, NOT at branch head: the FPS fix in `662cc8f` deliberately changes
