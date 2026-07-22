@@ -47,6 +47,7 @@ datasets that are unavailable or incompatible in the public release — **Hamlyn
 - [Launch](#launch)
 - [Licensing / provenance](#licensing--provenance)
 - [Decision log and handoff notes](#decision-log-and-handoff-notes)
+  - [CAMP port handoff (start here)](#camp-port-handoff-start-here)
   - [Embodiment tag vs institution (important)](#embodiment-tag-vs-institution-important)
   - [Modality-audit findings (per embodiment)](#modality-audit-findings-per-embodiment)
   - [Chronology of decisions](#chronology-of-decisions)
@@ -616,6 +617,111 @@ everything. Three source repos were involved:
   `cosmos_framework`, using a 54D CMR schema and a manifest-based dataset stack;
   the source of the *cookbook + `framework_patch/` overlay delivery pattern* and
   of several additional dataset candidates.
+
+### CAMP port handoff (start here)
+
+*Handoff 2026-07-22, Wes Huver → @lukaszbinden. Branch `c3-h-s-o-b_camp`
+carries Gate 0 of the CAMP (learned action-memory) port onto this cookbook.
+Questions: shuver@nvidia.com.*
+
+**What this branch adds** on top of the 44D mixed-mode cookbook above:
+
+- `a3d6f89` — framework-SHA pinning in `scripts/setup_workspace.sh`
+  (`COSMOS3_FRAMEWORK_REF`), the canonical CAMP data contract
+  (`framework_patch/cosmos_framework/data/vfm/action/camp_data_contract.py`),
+  and its test suite (`tests/test_camp_data_contract.py`).
+- `662cc8f` — CMR `conditioning_fps` fix: the adapter stamped the 30 Hz
+  storage rate on `cmr_versius` samples (it bypasses `EMBODIMENT_REGISTRY`,
+  so it hit the storage-FPS fallback); the actual training rate is
+  60 Hz / stride 6 = **10 Hz**. Also covers the latent `suturebot` case and
+  warns loudly if any future out-of-registry embodiment would silently fall
+  back.
+
+**Step 1 — recover and pin the framework SHA.** Upstream cosmos-framework
+has reorganised `data.vfm` → `data.generator`; this overlay still targets
+`data.vfm`, so a fresh **unpinned** `setup_workspace.sh` clone will not even
+import. Recover the SHA of the checkout that trained `mm-C3-H-S-S-base`:
+
+```bash
+# On EOS, if the original workspace still exists:
+git -C <workspace>/packages/cosmos3 rev-parse HEAD
+# Otherwise: W&B run mm-C3-H-S-S-base (project cosmos3_action_surgical,
+# group action_open_h) -> Overview -> git state.
+```
+
+Then either `export COSMOS3_FRAMEWORK_REF=<sha>` before running setup, or
+(better) hard-code it as the default in `scripts/setup_workspace.sh` so the
+pin travels with the branch. Use a full commit SHA, not a branch name. Setup
+records the resolved SHA in `packages/cosmos3-framework.lock` and exports
+`COSMOS3_FRAMEWORK_SHA` via `env.sh`; stamp it into every training/eval
+manifest from here on.
+
+**Step 2 — byte-identical H=0 reproduction check.** Run it at commit
+`a3d6f89`, NOT at branch head: the FPS fix in `662cc8f` deliberately changes
+CMR samples' `conditioning_fps` 30 → 10, so the pipeline is only
+byte-identical to the base run *before* that commit. Once reproduction and a
+successful base-checkpoint load are confirmed, everything launches from
+branch head so all experimental arms inherit the FPS correction uniformly.
+
+**The CAMP sequence layout** — single source of truth is
+`camp_data_contract.py`; import it, never copy the integers:
+
+| Rows | Content | Conditioning |
+| --- | --- | --- |
+| 0–2 (3) | learned memory: 132D VQ code reshaped to 3 × 44 | always clean |
+| 3–18 (16) | recent history at effective rate, native-D padded to 44D | always clean |
+| 19–30 (12) | current action window — public 12 × 44 contract, unchanged | FD clean; policy/ID denoise |
+
+There is deliberately **no task-progress channel** (Open-H has no single
+trustworthy completion definition across tasks/failures/endpoints);
+early/middle/late episode bins are for evaluation stratification only and
+are never exposed to the model.
+
+**Planned training arms (Phase 4)** — all three start from the same trained
+44D `mm-C3-H-S-S-base` checkpoint with identical data, mode ratios
+(equal FD/ID/policy), seed, LR schedule, steps, and cluster shape. Load ALL
+action heads — the "skip action heads" path was only for converting a 64D
+base to fresh 44D heads and must not be reused here.
+
+- **Arm A** — H0 continued-training control
+- **Arm B** — + 16-row real action history
+- **Arm C** — + history + learned memory (full CAMP)
+
+**Tests**:
+`python -m pytest cookbooks/cosmos3/generator/action/finetune/tests/ -v` —
+34 tests run in any Python env; 2 more (contract vs `groot_configs`
+cross-check, effective-FPS source coverage) activate automatically inside
+the workspace training env.
+
+**Roadmap after Gate 0** (agreed plan, condensed):
+
+1. **Phase 1 — history**: `num_history_actions=16` +
+   `history_ablation=None|zero|permute` on `OpenHMixedLeRobotDataset`;
+   history sampled at each embodiment's effective timestep interval with
+   the same relative transform/normalization as the current window;
+   episode-start clamping; stable `dataset_id`/`episode_id`/`base_index`.
+   Test per leaf class: dual-arm poses, single-arm, MIRA deltas, CMR
+   clutch/engagement, missing grippers, episode boundaries.
+2. **Phase 2 — memory**: ONE shared encoder with a learned embodiment
+   embedding (not nine); per-step input = canonical two-arm 20D state
+   (+ state mask) + previous normalized 44D action + active-channel mask;
+   production VQ recipe unchanged (data init, EMA, dead-code restarts,
+   commitment loss); `recon_len=512` @ verified 10 Hz, 32 DCT coeffs,
+   codebook 512, `code_dim=132`; collision-proof dataset IDs (never root
+   basenames — 36 leaves share names) in every export manifest.
+3. **Phase 3 — injection**: `CampActionTransformPipeline` wrapper prepends
+   the reshaped 3 × 44 code AFTER the existing normalize/pad, then rebuilds
+   the sequence plan with 19 conditioning positions. Never feed the 132D
+   code through native-action transforms.
+4. **Phase 4 — arms**: A/B/C above at matched iterations.
+5. **Phase 5 — eval + serving**: real/zero/shuffled history;
+   real/zero/**cross-episode-shuffled memory** (the strongest null detector
+   — in-distribution but behaviorally wrong); long-horizon FDM across
+   embodiments; policy MSE over active channels only; ID metrics; episode
+   bins; occlusion/arm-leaves-frame cases. Then the online state manager:
+   per-env LSTM hidden state, H16 executed-action buffer, episode-boundary
+   resets, 132D code emitted online with no dependency on pre-exported
+   tracks.
 
 ### Embodiment tag vs institution (important)
 
