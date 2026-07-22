@@ -45,6 +45,12 @@ OPENH_SURGICAL_ROOT="${OPENH_SURGICAL_ROOT:-/lustre/fsw/healthcareeng_holoscan/d
 COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-c3hss-v1}"
 COSMOS3_UV_GROUP="${COSMOS3_UV_GROUP:-cu130-train}"
 COSMOS3_REPO_URL="${COSMOS3_REPO_URL:-https://github.com/NVIDIA/cosmos-framework.git}"
+# Exact cosmos-framework commit that mm-C3-H-S-S-base was trained against.
+# Upstream has reorganised data.vfm → data.generator; this overlay still targets
+# data.vfm, so an unpinned clone will break at import.  Set this to the SHA
+# recovered from the EOS checkout before any production or CAMP run.
+# Gate 0 will fail with a loud warning when this is unset.
+COSMOS3_FRAMEWORK_REF="${COSMOS3_FRAMEWORK_REF:-}"
 BASE_CHECKPOINT_PATH="${BASE_CHECKPOINT_PATH:-$WORKSPACE/checkpoints/Cosmos3-Nano}"
 WAN_VAE_PATH="${WAN_VAE_PATH:-$WORKSPACE/checkpoints/wan22_vae/Wan2.2_VAE.pth}"
 UV_CACHE_DIR="${UV_CACHE_DIR:-$WORKSPACE/.uv-cache}"
@@ -69,6 +75,49 @@ FRAMEWORK_DIR="$WORKSPACE/packages/cosmos3"
 if [[ ! -d "$FRAMEWORK_DIR/.git" ]]; then
     git clone "$COSMOS3_REPO_URL" "$FRAMEWORK_DIR"
 fi
+
+# Pin to the verified framework SHA.  The overlay targets data.vfm; upstream
+# has since reorganised those modules.  Pinning ensures byte-identical imports
+# to the run that produced mm-C3-H-S-S-base and is required for CAMP work.
+#
+# Use a FULL COMMIT SHA, not a branch name: a branch name resolves to the
+# possibly-stale local branch, silently un-pinning the checkout.
+if [[ -n "${COSMOS3_FRAMEWORK_REF}" ]]; then
+    # Fetch may fail offline; the SHA may still be present locally, so warn
+    # and let rev-parse below decide.
+    git -C "$FRAMEWORK_DIR" fetch --quiet origin \
+        || echo "[framework] WARN: fetch failed (offline?); trying local objects"
+    if ! git -C "$FRAMEWORK_DIR" rev-parse --verify --quiet \
+            "${COSMOS3_FRAMEWORK_REF}^{commit}" >/dev/null; then
+        echo "ERROR: COSMOS3_FRAMEWORK_REF=$COSMOS3_FRAMEWORK_REF does not" >&2
+        echo "  resolve to a commit in $COSMOS3_REPO_URL. Check the SHA" >&2
+        echo "  recovered from the EOS checkout." >&2
+        exit 1
+    fi
+    # --force: apply_overlay.sh stamps files (incl. the tracked config.py)
+    # onto this checkout, so a re-run pinning a DIFFERENT SHA would otherwise
+    # fail on "local changes would be overwritten". Discarding is safe — the
+    # overlay is re-applied unconditionally later in this script.
+    git -C "$FRAMEWORK_DIR" checkout --quiet --force --detach "$COSMOS3_FRAMEWORK_REF"
+    echo "[framework] pinned to $COSMOS3_FRAMEWORK_REF"
+else
+    echo ""
+    echo "WARNING: COSMOS3_FRAMEWORK_REF is unset — using HEAD of the default branch."
+    echo "         Set it to the SHA recovered from the EOS checkout that produced"
+    echo "         mm-C3-H-S-S-base before any production or CAMP run (Gate 0)."
+    echo ""
+fi
+FRAMEWORK_SHA="$(git -C "$FRAMEWORK_DIR" rev-parse HEAD)"
+
+# Record the pinned SHA for manifest provenance (read by training launchers
+# and evaluation scripts to stamp every artifact).
+mkdir -p "$WORKSPACE/packages"
+cat > "$WORKSPACE/packages/cosmos3-framework.lock" <<LOCKEOF
+repo=$COSMOS3_REPO_URL
+ref=${COSMOS3_FRAMEWORK_REF:-HEAD}
+sha=$FRAMEWORK_SHA
+LOCKEOF
+echo "[framework] SHA=$FRAMEWORK_SHA recorded in packages/cosmos3-framework.lock"
 
 cd "$FRAMEWORK_DIR"
 export GIT_LFS_SKIP_SMUDGE=1
@@ -113,6 +162,10 @@ export COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX"
 # run needs neither var. Set DATASET_PATH only to re-root ALL specs elsewhere
 # (rebases by the full relative path under the surgical root).
 # export DATASET_PATH="$OPENH_SURGICAL_ROOT"
+# Framework SHA pinned at setup time (Gate 0).  Training/eval scripts record
+# this in every artifact manifest to make runs reproducible.
+export COSMOS3_FRAMEWORK_SHA="$FRAMEWORK_SHA"
+export COSMOS3_FRAMEWORK_REF="${COSMOS3_FRAMEWORK_REF:-$FRAMEWORK_SHA}"
 EOF
 
 echo ""
