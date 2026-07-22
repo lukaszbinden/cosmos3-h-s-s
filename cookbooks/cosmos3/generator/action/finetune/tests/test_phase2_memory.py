@@ -382,3 +382,47 @@ class TestMultiEmbodiment:
         code = torch.randn(contract.CODE_DIM)
         rows = code.view(contract.NUM_MEMORY_SLOTS, contract.ACTION_DIM)
         assert rows.shape == (3, 44)
+
+
+class TestEmbodimentVocabulary:
+    def test_ids_dense_and_contiguous(self):
+        ids = sorted(contract.MEMORY_EMBODIMENT_IDS.values())
+        assert ids == list(range(contract.NUM_MEMORY_EMBODIMENTS))
+
+    def test_nine_open_h_tags(self):
+        assert contract.NUM_MEMORY_EMBODIMENTS == 9
+        assert set(contract.MEMORY_EMBODIMENT_IDS) == {
+            "cmr_versius", "dvrk_obuda", "dvrk_stanford_real", "dvrk_ucb",
+            "dvrk_ucsd", "jhu_dvrk_mono", "jhu_lscr_miracle", "tud_tundra",
+            "turin_mitic_ex_vivo",
+        }
+
+    def test_lookup_helper(self):
+        assert contract.memory_embodiment_id("cmr_versius") == 0
+        assert contract.memory_embodiment_id("jhu_dvrk_mono") == 5
+
+    def test_unknown_tag_raises_with_guidance(self):
+        with pytest.raises(KeyError, match="domain_id"):
+            contract.memory_embodiment_id("suturebot")
+
+    def test_wrapper_default_vocab_matches_contract(self):
+        m = am.MultiEmbodimentActionMemoryEncoder()
+        assert m.num_embodiments == contract.NUM_MEMORY_EMBODIMENTS
+        assert m.embodiment_embedding.num_embeddings == 9
+
+    def test_specs_covered_by_vocabulary(self):
+        """Every embodiment in the Open-H specs must have a memory id."""
+        pytest.importorskip("torch")
+        try:
+            from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
+                OPEN_H_DATASET_SPECS,
+            )
+            from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import (
+                EmbodimentTag,
+            )
+        except ImportError as e:
+            pytest.skip(f"data stack not importable: {e}")
+        for spec in OPEN_H_DATASET_SPECS:
+            emb = spec["embodiment"]
+            emb = emb.value if isinstance(emb, EmbodimentTag) else emb
+            assert emb in contract.MEMORY_EMBODIMENT_IDS, emb

@@ -742,6 +742,15 @@ this branch (129 local tests passing; run the suite with the command above):
    `inject_memory_rows` FAILS CLOSED on raw_action_dim < 44 until this
    lands, so a mis-wired arm C crashes rather than trains on a truncated
    code. Arms A/B are unaffected.
+5. **Arm-C packing smoke** — the packer lays action tokens inline with
+   vision supertokens (`num_action_tokens_per_supertoken = 4`;
+   `sequence_packing.py::generate_temporal_causal_natten_metadata`).
+   Arm B's 28 rows divide evenly (4 x 7); arm C's 31 do NOT. SutureBot ran
+   35 rows on the internal stack, suggesting conditioning rows ride free of
+   the x4 grouping, but verify on a 1-node smoke before the arm-C launch.
+   Contingency if the packer requires x4: pad one zero conditioning row
+   (32 = 4 x 8) or move the contract to 4 memory slots (CODE_DIM 176) —
+   either is a camp_data_contract.py change plus memory re-export.
 
 **Roadmap after Gate 0** (agreed plan, condensed):
 

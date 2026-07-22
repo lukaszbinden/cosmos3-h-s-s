@@ -57,6 +57,19 @@ from cosmos_framework.data.vfm.joint_dataloader import (
 )
 from cosmos_framework.data.vfm.action.datasets.openh_sft_dataset import get_action_openh_sft_dataset
 
+# CAMP history/memory arms are defined on the MIXED experiment
+# (action_mixed_open_h_sft_nano), which reads these env vars. This FD-only
+# baseline deliberately does not thread them — fail loudly rather than let a
+# mis-launched arm silently train without history.
+import os as _os
+
+if _os.environ.get("COSMOS_OPENH_NUM_HISTORY_ACTIONS") or _os.environ.get("COSMOS_OPENH_HISTORY_ABLATION"):
+    raise RuntimeError(
+        "COSMOS_OPENH_NUM_HISTORY_ACTIONS / COSMOS_OPENH_HISTORY_ABLATION are set, "
+        "but the FD-only experiment (action_fdm_open_h_sft_nano) does not support "
+        "CAMP history. Launch CAMP arms via action_mixed_open_h_sft_nano."
+    )
+
 cs = ConfigStore.instance()
 
 

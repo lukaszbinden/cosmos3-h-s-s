@@ -96,6 +96,53 @@ MEMORY_NUM_COEFFS: int = 32
 MEMORY_RECON_LEN: int = 512  # at verified 10 Hz effective training rate
 
 # ---------------------------------------------------------------------------
+# Memory-encoder embodiment vocabulary
+# ---------------------------------------------------------------------------
+# Dense ids for the shared memory encoder's embodiment embedding. These are
+# NOT the dataset domain_ids (domain_utils assigns sparse values like 31);
+# feeding a domain_id into an Embedding(9, E) would index-error or silently
+# demand an oversized vocabulary. Always map through
+# :func:`memory_embodiment_id`.
+#
+# STABILITY: these ids are baked into every memory checkpoint and every
+# exported code track. NEVER renumber or remove an entry — append new
+# embodiments with the next free id. (Initial assignment: the 9 tags of
+# OPEN_H_DATASET_SPECS, alphabetical.)
+MEMORY_EMBODIMENT_IDS: dict[str, int] = {
+    "cmr_versius": 0,
+    "dvrk_obuda": 1,
+    "dvrk_stanford_real": 2,
+    "dvrk_ucb": 3,
+    "dvrk_ucsd": 4,
+    "jhu_dvrk_mono": 5,
+    "jhu_lscr_miracle": 6,
+    "tud_tundra": 7,
+    "turin_mitic_ex_vivo": 8,
+}
+
+NUM_MEMORY_EMBODIMENTS: int = len(MEMORY_EMBODIMENT_IDS)
+"""Embedding vocabulary size for the shared memory encoder (9 Open-H tags)."""
+
+
+def memory_embodiment_id(embodiment_tag: str) -> int:
+    """Dense memory-encoder id for an embodiment tag.
+
+    Raises:
+        KeyError: For tags outside the frozen vocabulary — extend
+            ``MEMORY_EMBODIMENT_IDS`` (append-only) rather than passing
+            arbitrary ints.
+    """
+    try:
+        return MEMORY_EMBODIMENT_IDS[embodiment_tag]
+    except KeyError:
+        raise KeyError(
+            f"Unknown memory embodiment tag {embodiment_tag!r}; known: "
+            f"{sorted(MEMORY_EMBODIMENT_IDS)}. Do NOT pass dataset domain_ids "
+            "here — extend MEMORY_EMBODIMENT_IDS (append-only) for new "
+            "embodiments."
+        ) from None
+
+# ---------------------------------------------------------------------------
 # Conditioning masks
 # ---------------------------------------------------------------------------
 
@@ -172,6 +219,11 @@ def assert_contract_invariants() -> None:
         (
             ACTION_DIM == 44,
             "ACTION_DIM must remain 44 to preserve the public 44D action contract.",
+        ),
+        (
+            sorted(MEMORY_EMBODIMENT_IDS.values()) == list(range(NUM_MEMORY_EMBODIMENTS)),
+            "MEMORY_EMBODIMENT_IDS must be dense and contiguous 0..N-1 "
+            "(append-only; never renumber).",
         ),
     ]
     for ok, message in checks:

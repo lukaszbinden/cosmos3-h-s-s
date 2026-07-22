@@ -57,6 +57,7 @@ from cosmos_framework.data.vfm.action.camp_data_contract import (
     MEMORY_CODEBOOK_SIZE,
     MEMORY_NUM_COEFFS,
     MEMORY_RECON_LEN,
+    NUM_MEMORY_EMBODIMENTS,
 )
 
 # Canonical two-arm kinematic state: 2 arms x (xyz 3 + rot6d 6 + gripper 1).
@@ -500,15 +501,19 @@ class MultiEmbodimentActionMemoryEncoder(nn.Module):
          action_mask (44) | embodiment_embedding (E)]
 
     Args:
-        num_embodiments: Size of the embodiment vocabulary (9 Open-H tags;
-            pass the domain-id vocabulary size used by the dataset).
+        num_embodiments: Embodiment-embedding vocabulary size. Defaults to
+            ``camp_data_contract.NUM_MEMORY_EMBODIMENTS`` (9). IDs fed to
+            :meth:`assemble`/:meth:`encode_episode`/:meth:`step` must come
+            from ``camp_data_contract.memory_embodiment_id(tag)`` — NOT the
+            dataset ``domain_id`` (those are sparse, e.g. 31, and would
+            index-error or demand an oversized vocabulary).
         embed_dim: Learned embodiment-embedding width.
         Remaining args: forwarded to :class:`ActionMemoryEncoder`.
     """
 
     def __init__(
         self,
-        num_embodiments: int,
+        num_embodiments: int = NUM_MEMORY_EMBODIMENTS,
         embed_dim: int = 16,
         hidden_dim: int = 128,
         num_layers: int = 2,
