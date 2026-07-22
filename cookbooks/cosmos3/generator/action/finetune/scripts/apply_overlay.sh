@@ -194,16 +194,39 @@ echo ""
 echo "[verify] importing overlaid modules..."
 python - <<'PY'
 import importlib
-mods = [
+import os
+
+data_mods = [
     "cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs",
     "cosmos_framework.data.vfm.action.open_h_dataset",
     "cosmos_framework.data.vfm.action.datasets.openh_sft_dataset",
-    "cosmos_framework.configs.base.experiment.action.posttrain_config.action_fdm_open_h_sft_nano",
-    "cosmos_framework.configs.base.experiment.action.posttrain_config.action_mixed_open_h_sft_nano",
 ]
-for m in mods:
+for m in data_mods:
     importlib.import_module(m)
     print(f"  [ok] import {m}")
+
+# The FD-only config intentionally fails closed when any CAMP env knob is set.
+# Arm-B/C jobs necessarily run this verifier with those knobs exported, so
+# import the FD config in a temporarily sanitized environment. Restore the
+# exact environment before verifying the mixed config that actually consumes
+# the CAMP settings.
+camp_vars = (
+    "COSMOS_OPENH_NUM_HISTORY_ACTIONS",
+    "COSMOS_OPENH_HISTORY_ABLATION",
+    "COSMOS_OPENH_CAMP_MEMORY_TRACKS",
+    "COSMOS_OPENH_MEMORY_ABLATION",
+)
+saved = {key: os.environ.pop(key) for key in camp_vars if key in os.environ}
+fd_mod = "cosmos_framework.configs.base.experiment.action.posttrain_config.action_fdm_open_h_sft_nano"
+try:
+    importlib.import_module(fd_mod)
+    print(f"  [ok] import {fd_mod} (CAMP env temporarily cleared)")
+finally:
+    os.environ.update(saved)
+
+mixed_mod = "cosmos_framework.configs.base.experiment.action.posttrain_config.action_mixed_open_h_sft_nano"
+importlib.import_module(mixed_mod)
+print(f"  [ok] import {mixed_mod} (CAMP env restored)")
 print("[verify] overlay import check passed.")
 PY
 

@@ -15,7 +15,8 @@ echo "ARM_A_MODEL_METADATA_SHA256=${ARM_A_MODEL_METADATA_SHA256:-unset}"
 if [[ "${CAMP_WARMSTART_DECISION:-}" == "RESUME_ARM_B" ]]; then
     echo "ARM_A_CHECKPOINT_REAPPLIED=false (resuming Arm-B run state)"
 elif [[ "${CAMP_WARMSTART_DECISION:-}" == "WARMSTART_ARM_A_ONCE" ]]; then
-    echo "ARM_A_CHECKPOINT_REAPPLIED=true (first segment only)"
+    echo "ARM_A_CHECKPOINT_LOAD_ATTEMPT=true (first segment only)"
+    echo "ARM_A_CHECKPOINT_REAPPLIED=pending_model_load"
 fi
 
 # Draco compute nodes are offline. The squashfs image must already contain
