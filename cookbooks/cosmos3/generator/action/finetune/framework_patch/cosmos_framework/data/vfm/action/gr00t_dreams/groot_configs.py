@@ -2046,11 +2046,21 @@ _DRACO_OPENH_RELATIVE_PATH_OVERRIDES: dict[str, str] = {
     ),
 }
 
+_DRACO_OPENH_LZ_RELATIVE_PATH_OVERRIDES: dict[str, str] = {
+    "jhu/imerse/srth_porcine_chole": (
+        "Surgical/JHU/Imerse/previously_collected_data/srth_porcine_chole_fix"
+    ),
+    "jhu/imerse/suturebot": (
+        "Surgical/JHU/Imerse/previously_collected_data/hf_suturebot"
+    ),
+}
+
 
 def get_open_h_multi_train_specs(
     base_path: str | None = None,
     cmr_base_path: str | None = None,
     path_layout: str | None = None,
+    openh_lz_base_path: str | None = None,
 ) -> list[dict]:
     """Open-H multi-embodiment training mixture (CMR + 13 surgical subsets).
 
@@ -2089,7 +2099,13 @@ def get_open_h_multi_train_specs(
                 raise ValueError(
                     f"No Draco internal path mapping for Open-H leaf {relative_path!r}"
                 ) from exc
-            spec["path"] = str(base / draco_relative_path)
+            if openh_lz_base_path and relative_path in _DRACO_OPENH_LZ_RELATIVE_PATH_OVERRIDES:
+                spec["path"] = str(
+                    _Path(str(openh_lz_base_path))
+                    / _DRACO_OPENH_LZ_RELATIVE_PATH_OVERRIDES[relative_path]
+                )
+            else:
+                spec["path"] = str(base / draco_relative_path)
     if not cmr_base_path:
         return specs
 

@@ -33,6 +33,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--cmr-root", required=True)
+    parser.add_argument("--openh-lz-root")
     parser.add_argument("--path-layout", default="draco_internal")
     parser.add_argument(
         "--stats-postfix",
@@ -50,6 +51,7 @@ def main() -> None:
         base_path=args.root,
         cmr_base_path=args.cmr_root,
         path_layout=args.path_layout,
+        openh_lz_base_path=args.openh_lz_root,
     )
     missing: list[str] = []
     print(f"[Open-H preflight] checking {len(specs)} dataset leaves")

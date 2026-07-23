@@ -208,6 +208,7 @@ def _iter_specs(args):
         base_path=args.root,
         cmr_base_path=args.cmr_root,
         path_layout=args.path_layout,
+        openh_lz_base_path=args.openh_lz_root,
     ):
         emb = spec["embodiment"]
         emb = emb.value if isinstance(emb, EmbodimentTag) else emb
@@ -494,6 +495,11 @@ def main() -> None:
         default=os.environ.get("COSMOS_OPENH_PATH_LAYOUT", "public"),
         choices=["public", "eos", "draco_internal"],
         help="relative dataset naming convention (default: public)",
+    )
+    parser.add_argument(
+        "--openh-lz-root",
+        default=os.environ.get("COSMOS_OPENH_LZ_ROOT"),
+        help="optional writable Open-H-lz mirror for selected Draco JHU leaves",
     )
     parser.add_argument("--dataset-path", default=None, help="single dataset path (requires --embodiment)")
     parser.add_argument("--embodiment", default=None, help="embodiment tag for --dataset-path")

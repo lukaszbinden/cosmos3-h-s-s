@@ -304,14 +304,17 @@ class TestContractMatchesDataStack:
 
         root = "/draco/Open-H/Surgical"
         cmr_root = "/draco/Open-H/cmr-surgical-60hz-fixed"
+        lz_root = "/draco/Open-H-lz"
         specs = get_open_h_multi_train_specs(
             base_path=root,
             cmr_base_path=cmr_root,
             path_layout="draco_internal",
+            openh_lz_base_path=lz_root,
         )
         assert len(specs) == 36
         paths = {spec["path"] for spec in specs}
-        assert f"{root}/JHU/Imerse/previously_collected_data/srth_porcine_chole_fix" in paths
+        assert f"{lz_root}/Surgical/JHU/Imerse/previously_collected_data/srth_porcine_chole_fix" in paths
+        assert f"{lz_root}/Surgical/JHU/Imerse/previously_collected_data/hf_suturebot" in paths
         assert f"{root}/JHU/LSCR/MIRACLE /Prepare to Pierce" in paths
         assert f"{root}/Obuda/FRS_Dome_1" in paths
         assert (

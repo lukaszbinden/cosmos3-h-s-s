@@ -18,6 +18,7 @@ echo "MASTER_ADDR=${MASTER_ADDR:-unset} MASTER_PORT=${MASTER_PORT:-unset}"
 echo "COSMOS_OPENH_NUM_HISTORY_ACTIONS=${COSMOS_OPENH_NUM_HISTORY_ACTIONS:-unset}"
 echo "COSMOS_OPENH_STATS_POSTFIX=${COSMOS_OPENH_STATS_POSTFIX:-unset}"
 echo "COSMOS_OPENH_CMR_ROOT=${COSMOS_OPENH_CMR_ROOT:-unset}"
+echo "COSMOS_OPENH_LZ_ROOT=${COSMOS_OPENH_LZ_ROOT:-unset}"
 echo "COSMOS_OPENH_PATH_LAYOUT=${COSMOS_OPENH_PATH_LAYOUT:-unset}"
 echo "COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP=${COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP:-unset}"
 echo "CAMP_WARMSTART_DECISION=${CAMP_WARMSTART_DECISION:-unset}"
@@ -93,6 +94,7 @@ if [[ "${COSMOS_OPENH_PATH_LAYOUT:-}" == "draco_internal" ]]; then
     python "$_INNER_DIR/preflight_check_openh_dataset_paths.py" \
         --root "${DATASET_PATH:?DATASET_PATH is required for Draco Open-H}" \
         --cmr-root "${COSMOS_OPENH_CMR_ROOT:?COSMOS_OPENH_CMR_ROOT is required for Draco Open-H}" \
+        --openh-lz-root "${COSMOS_OPENH_LZ_ROOT:?COSMOS_OPENH_LZ_ROOT is required for Draco Open-H}" \
         --path-layout "$COSMOS_OPENH_PATH_LAYOUT" \
         --stats-postfix "${COSMOS_OPENH_STATS_POSTFIX:?COSMOS_OPENH_STATS_POSTFIX is required}"
 fi

@@ -108,6 +108,7 @@ def get_action_openh_sft_dataset(
     base_path: str | None = None,
     cmr_base_path: str | None = None,
     path_layout: str | None = None,
+    openh_lz_base_path: str | None = None,
     num_frames: int = 13,
     data_split: str = "train",
     mode: str = "forward_dynamics",
@@ -168,6 +169,7 @@ def get_action_openh_sft_dataset(
         base_path=base_path,
         cmr_base_path=cmr_base_path,
         path_layout=path_layout,
+        openh_lz_base_path=openh_lz_base_path,
     )
     base = OpenHMixedLeRobotDataset(
         dataset_specs=specs,
