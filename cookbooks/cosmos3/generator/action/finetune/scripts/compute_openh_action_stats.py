@@ -367,6 +367,7 @@ def compute_for_dataset(
     # so a long silent video-decode loop still shows it's alive without spamming.
     hb_every = max(1, n_windows // 20)
     for n_seen, i in enumerate(idxs, start=1):
+        sample = None
         try:
             trajectory_id, base_index = all_steps[i]
             sample = transform(ds.get_step_data(trajectory_id, base_index))
@@ -374,16 +375,16 @@ def compute_for_dataset(
             failed += 1
             if failed <= 3:
                 print(f"  [warn] window {i} failed: {e!r}", flush=True)
-            continue
-        for key, val in sample.items():
-            if not (key.startswith("action.") or key.startswith("state.")):
-                continue
-            arr = np.asarray(val, dtype=np.float64)
-            if arr.ndim == 1:
-                arr = arr[None, :]
-            arr = arr.reshape(-1, arr.shape[-1])
-            buckets.setdefault(key, []).append(arr)
-        used += 1
+        if sample is not None:
+            for key, val in sample.items():
+                if not (key.startswith("action.") or key.startswith("state.")):
+                    continue
+                arr = np.asarray(val, dtype=np.float64)
+                if arr.ndim == 1:
+                    arr = arr[None, :]
+                arr = arr.reshape(-1, arr.shape[-1])
+                buckets.setdefault(key, []).append(arr)
+            used += 1
         if n_seen % hb_every == 0 or n_seen == n_windows:
             elapsed = time.time() - start_t
             rate = n_seen / elapsed if elapsed > 0 else 0.0

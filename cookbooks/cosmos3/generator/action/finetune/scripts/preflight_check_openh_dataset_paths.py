@@ -60,6 +60,7 @@ def main() -> None:
         cmr = _is_cmr(spec)
         required = [
             dataset_path,
+            dataset_path / "data",
             dataset_path / "meta/info.json",
             dataset_path / "meta/episodes.jsonl",
             dataset_path / ("meta/modality-44D.json" if cmr else "meta/modality.json"),
