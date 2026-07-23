@@ -759,8 +759,13 @@ history ablations, loads **all** trained 44D action heads
 (`checkpoint.keys_to_skip_loading=[]`), and writes to the isolated
 `action_open_h_camp/camp-arm-b-h16-<arm-a-iteration>` run directory. Including
 the Arm-A checkpoint tag prevents an older Arm-B run from cross-resuming after
-the approved warm-start changes. Its sequential 12-task Slurm array auto-resumes
-only Arm B's own optimizer/scheduler/EMA state.
+the approved warm-start changes. At the measured H16 steady-state throughput
+(about 155 seconds/iteration), its sequential 280-task Slurm array provides
+enough 4-hour segments for 20k iterations. It checkpoints every 50 iterations
+so each segment produces a resumable save before wall time. Later segments
+auto-resume only Arm B's own optimizer/scheduler/EMA state. Do not signal the
+outer `torchrun` step for checkpointing: Torch Elastic intercepts SIGTERM and
+terminates trainer/DataLoader children before the framework callback can save.
 
 **Warm-start audit across Draco's 4-hour segments.** The first Arm-B segment
 atomically writes `arm_a_warmstart_attempt.env` in the Arm-B run directory and

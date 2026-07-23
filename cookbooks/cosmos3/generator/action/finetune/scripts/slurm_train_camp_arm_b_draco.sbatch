@@ -23,7 +23,9 @@
 #SBATCH --gres=gpu:8
 #SBATCH --time=4:00:00
 #SBATCH --job-name=healthcareeng_holoscan-cosmos3.camp-arm-b-h16
-#SBATCH --array=0-11%1
+# Measured H16 steady state is about 155 s/iteration (~80 useful iterations per
+# slot before checkpoint overhead). 280 sequential slots cover 20k with margin.
+#SBATCH --array=0-279%1
 #SBATCH --dependency=singleton
 #SBATCH --requeue
 #SBATCH --output=logs/camp-arm-b-h16_%A_%a.out
@@ -62,6 +64,9 @@ done
 # Arm identity and data semantics. Do not permit an ablation setting on the
 # production Arm-B run.
 CAMP_ARM_B_RUN_GROUP="${CAMP_ARM_B_RUN_GROUP:-action_open_h_camp}"
+# H16 measures ~80 useful iterations per 4h Draco slot; save at least once per
+# segment without changing the shared mixed-mode recipe's default cadence.
+CAMP_ARM_B_SAVE_ITER="${CAMP_ARM_B_SAVE_ITER:-50}"
 export COSMOS_OPENH_NUM_HISTORY_ACTIONS=16
 if [[ -n "${COSMOS_OPENH_HISTORY_ABLATION:-}" ]]; then
     echo "FATAL: Arm B requires real history; unset COSMOS_OPENH_HISTORY_ABLATION." >&2
