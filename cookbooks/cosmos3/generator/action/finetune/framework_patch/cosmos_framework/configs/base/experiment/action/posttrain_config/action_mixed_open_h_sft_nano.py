@@ -353,9 +353,6 @@ action_mixed_open_h_sft_nano = LazyDict(
             dcp_async_mode_enabled=True,
             enable_gcs_patch_in_boto3=False,
             keys_not_to_resume=[],
-            # Preserve resumed scheduler/optimizer state and iteration, while
-            # reconciling base LRs to this configured value after loading.
-            enforce_configured_lr_on_resume=True,
             # Action-projection heads init fresh from the base (base is 64D vs our
             # 44D); EMA warm-starts from net.
             keys_to_skip_loading=[
