@@ -204,7 +204,11 @@ def _iter_specs(args):
         yield Path(args.dataset_path), args.embodiment
         return
 
-    for spec in get_open_h_multi_train_specs(base_path=args.root):
+    for spec in get_open_h_multi_train_specs(
+        base_path=args.root,
+        cmr_base_path=args.cmr_root,
+        path_layout=args.path_layout,
+    ):
         emb = spec["embodiment"]
         emb = emb.value if isinstance(emb, EmbodimentTag) else emb
         yield Path(spec["path"]), emb
@@ -472,6 +476,17 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--root", default=None, help="OPENH_SURGICAL_ROOT / DATASET_PATH to re-root specs")
+    parser.add_argument(
+        "--cmr-root",
+        default=os.environ.get("COSMOS_OPENH_CMR_ROOT"),
+        help="separate CMR mirror root (defaults to COSMOS_OPENH_CMR_ROOT)",
+    )
+    parser.add_argument(
+        "--path-layout",
+        default=os.environ.get("COSMOS_OPENH_PATH_LAYOUT", "public"),
+        choices=["public", "eos", "draco_internal"],
+        help="relative dataset naming convention (default: public)",
+    )
     parser.add_argument("--dataset-path", default=None, help="single dataset path (requires --embodiment)")
     parser.add_argument("--embodiment", default=None, help="embodiment tag for --dataset-path")
     parser.add_argument("--num-frames", type=int, default=13, help="video frames (1 context + N pred); default 13")
