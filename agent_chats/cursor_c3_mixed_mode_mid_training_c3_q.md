@@ -1,5 +1,5 @@
 # C3 mixed-mode mid-training - C3 Q&A - Action conditioned finetuning configuration
-_Exported on 7/3/2026 at 10:10:32 GMT+2 from Cursor (3.9.16)_
+_Exported on 7/9/2026 at 11:34:54 GMT+2 from Cursor (3.9.16)_
 
 ---
 
@@ -6541,4 +6541,109 @@ sbatch cookbooks/cosmos3/generator/action/finetune/scripts/slurm_train_mixed.sba
 That gives you a fresh W&B run + clean cold-start. If you'd rather not lose the ~49 iters, you can let it ride — the model is training correctly; just be aware the W&B curve for this run will be visually stitched to the old crashed attempt.
 
 One thing still **unproven**: the 48-GPU fix's real test is surviving a **resume** (the previous crash was resume-time OOM, and this is a cold-start so far). Watch the **second** array task (the first resume from a checkpoint) — if it gets past the first post-resume backward without `Failed to CUDA calloc`, the OOM fix is confirmed.
+
+---
+
+**User**
+
+check again:
+@cosmos3-h-s-s/logs/mm_training 
+
+it's at ~1300 steps now
+
+---
+
+**Cursor**
+
+Let me re-check the current state of the mixed-mode training, especially whether it survived resumes (the real OOM test) and how the loss is trending.
+
+Now there are 3 tasks (0 cold-start, 1 & 2 are **resumes** — the real OOM test). Let me check resume success, progress, and any errors.
+
+Resumes now work — that's the key win. But let me verify the "errors" are just time-limit cancellations (not OOM) and check the actual loss trend across all ~1300 steps, since the per-iter losses look high/noisy.
+
+The loss is logged per-rank (huge output). Let me read the key parts of that output and get a cleaner loss trend.
+
+The "errors" are just the normal **4h TIME LIMIT** cancellations (not OOM) — confirmed. And the per-rank/per-iter losses are wildly noisy (0.86 to 42 at the same iter) because different ranks run different modes at random noise levels. Let me pull the clean **rank-0 averaged loss** stream (logged every 50 iters) to see the real trend.
+
+Re-checked — the run is **healthy and the OOM fix is confirmed working**. Here's the full picture at ~1300 steps.
+
+## ✅ The 48-GPU fix works — resumes no longer OOM
+This was the critical unknown, and it passed:
+- **Task 0** (cold-start): iters 1 → ~450, saved `iter_400`.
+- **Task 1** (`RESUME: iter_000000400`): 401 → ~800, saved `iter_800`. **Survived the first post-resume backward** — the exact spot that OOM'd on 32 GPUs.
+- **Task 2** (`RESUME: iter_000000800`): 801 → ~1300 (current).
+
+No `Failed to CUDA calloc` anywhere. The per-task "errors" are just the normal **4h TIME LIMIT** cancellations (`STEP/JOB CANCELLED ... DUE TO TIME LIMIT`) that drive the auto-chaining — expected, not crashes.
+
+## ✅ Loss is healthy (the scary numbers are noise)
+The per-iteration/per-rank losses you may have seen (6, 10, even 40+) are **not** a trend — with 48 ranks split across FD/ID/policy modes at random noise levels, a single rank at a single step swings wildly by design. The clean signal is **rank 0's periodic (every-50) loss**, which is a consistent single mode (FD):
+
+| iter | 150 | 300 | 550 | 700 | 850 | 1050 | 1200 |
+|---|---|---|---|---|---|---|---|
+| loss | 1.51 | 1.27 | 1.87 | 1.47 | 1.05 | 1.39 | 1.63 |
+
+Stable, noisy, ~1.0–1.9 — exactly matching the FD-only run's rank-0 loss (~1.6–1.9). This is normal for flow-matching (training loss is a noisy stationary signal, not monotonically decreasing) and it's warm-started from sean's 54D, so it's already at its plateau. Not diverging. Real progress will show in generation/eval, not the training loss.
+
+## ⚠️ One thing to watch: throughput vs the array budget
+At **~30 s/iter → ~450 iters per 4h task**, and your launcher is `--array=0-11%1` (**12 tasks**). That reaches only **~5,400 iters** before the array exhausts — well short of `max_iter=20000` (which needs **~44 tasks**). So:
+- The run **won't reach 20k on this one array submission** — you'll need to **re-`sbatch`** the mixed launcher periodically (it resumes from the latest checkpoint via `--dependency=singleton`), or bump the `--array` upper bound, or use `resubmit_until_done.sh`.
+- 20k iters ≈ **44 × ~4h tasks** of accumulated wall time (subject to queue/preemption). If that's too long, options: raise `max_samples_per_batch`/throughput, accept a lower `max_iter`, or reconsider — but nothing's wrong, it's just the ~30 s/iter reality I flagged earlier.
+
+## Bottom line
+Clean cold-start → 48-GPU resumes working → chaining to ~1300 with stable FD loss and true 832×480 input. Nothing to fix. Just keep the array resubmitting toward 20k, and judge convergence from W&B (per-mode smoothed loss) + periodic sample generations rather than the raw training loss.
+
+---
+
+**User**
+
+for evaluation, we have FDS (frame decay score) which represents FD mode. 
+how can we evalute policy mode?
+could we use the SutureBot benchmark?
+https://arxiv.org/abs/2510.20965 
+
+---
+
+**Cursor**
+
+Great question — and it exposes a fundamental point: **FDS and policy metrics measure different axes**, so you can't reuse FDS. Let me lay out the options and give you a candid assessment of SutureBot (including one important catch specific to *your* setup).
+
+## Why FDS doesn't transfer to policy
+
+- **FD** = `p(video | frame, action)` → you *give* actions, model predicts video. FDS scores **video quality/decay** over the rollout. Actions are an input, so you never test whether the model can *choose* good actions.
+- **Policy** = `p(action, video | frame[, goal/text])` → model *predicts the actions*. So policy eval must score **action correctness / task success**, not pixels. Different axis entirely.
+
+## The standard policy-eval hierarchy (what Cosmos 3 itself does)
+
+The Cosmos 3 paper (your grounding) evaluates its `Cosmos3-Nano-Policy-DROID` on three tiers — worth mirroring:
+
+| Tier | Metric | Cost | Needs |
+|---|---|---|---|
+| **1. Open-loop action accuracy** | action MSE vs ground-truth chunk; "policy coverage" | cheap, offline | a held-out dataset |
+| **2. Video–action consistency** | execute the predicted action chunk, compare predicted video vs the resulting rollout (PSNR) | medium | a simulator (or your own FD model as the "renderer") |
+| **3. Closed-loop task success** | success rate over rollouts (RoboLab, MolmoSpaces sim; RoboArena real) | expensive | interactive sim / hardware |
+
+Tier 3 (success rate) is the gold standard; Tiers 1–2 are the cheap proxies you can run immediately.
+
+## Can you use SutureBot? Yes — it's arguably the *best surgical fit* — but with 3 real caveats
+
+[SutureBot (arXiv:2510.20965)](https://arxiv.org/abs/2510.20965) is an autonomous-suturing benchmark on the **dVRK** (needle pickup → tissue insertion → knot tying), releasing ~1,890 demos and benchmarking VLA/policy models (π₀, GR00T N1, OpenVLA-OFT, multitask ACT) with task-success + insertion-point precision. That's exactly the **surgical, action/task-success** signal policy mode needs — a much better domain match than RoboLab/LIBERO. But:
+
+**⚠️ Caveat 1 — SutureBot data is (almost certainly) already IN your training set.**
+Your Open-H mixture includes `jhu/imerse/suturebot` (JHU IMERSE, ~1,452 episodes / 516k frames, `mix_ratio 0.238`) — same JHU group (Krieger, Kim, Chen) that authored SutureBot. So a naive eval on SutureBot demos is **train/test contamination**. To use it validly you must evaluate **only on a held-out split/tasks that you explicitly excluded from training** (and confirm the benchmark's eval episodes aren't in your Open-H leaf). This is the single most important thing to get right — otherwise the numbers are meaningless.
+
+**⚠️ Caveat 2 — closed-loop needs the dVRK (hardware) or their sim.**
+SutureBot's task-success protocol runs on physical dVRK. If you don't have that setup, you're limited to **open-loop** metrics on their released demos (action MSE / insertion-point precision offline). Closed-loop success rate needs their framework + a robot.
+
+**⚠️ Caveat 3 — interface + embodiment mapping, and you'd post-train first.**
+Your `Cosmos-Surg-3-Policy` outputs the unified **44D** action (CMR-ceiling rep); SutureBot expects a dVRK control interface + its goal-conditioning/task-prediction wrapper. And your base is a *mixture* (CMR Versius dominant, not dVRK). Like the paper post-trains `Policy-DROID` on DROID before evaluating, you'd **post-train Cosmos-Surg-3-Policy on the dVRK suturing task**, map 44D → dVRK, then benchmark — again with a clean held-out split.
+
+## Concrete recommendation
+
+Do it in stages, cheapest first:
+
+1. **Now (Tier 1, offline):** action MSE + trajectory error on a **held-out surgical policy split** (held-out CMR episodes and/or held-out SutureBot episodes you excluded from training). This is the direct analog to your FDS-for-FD, and it's the fastest signal. Report per-embodiment.
+2. **Tier 2 (leverages your own stack):** **video–action consistency** — feed the policy an initial frame, take its predicted action chunk, run it through your **FD model** (Cosmos-Surg-3-Simulator) as the "renderer," and compare against the policy's *jointly predicted* video. This reuses what you already have (no external sim) and directly tests whether the policy's actions and its imagined video agree — a strong internal consistency check the paper also uses (its RoboLab video-action-consistency appendix).
+3. **Tier 3 (SutureBot, gold standard):** if you have dVRK access, post-train on SutureBot suturing (clean split), map the action interface, and report **task success + insertion-point precision** against their VLA baselines (π₀, GR00T N1, etc.). This would be a *publishable* surgical-policy result and a natural fit for your H1/H2 story.
+
+**Bottom line:** SutureBot is a strong, domain-appropriate closed-loop benchmark for surgical policy — genuinely the right target — but (a) treat the leakage risk as first-order since its data is in your training mix, (b) it needs dVRK/sim for closed-loop, and (c) plan on a post-train + interface-mapping step. In the meantime, **open-loop action MSE on a held-out split** + **video–action consistency via your FD model** give you immediate policy-mode signal without any of that overhead.
 

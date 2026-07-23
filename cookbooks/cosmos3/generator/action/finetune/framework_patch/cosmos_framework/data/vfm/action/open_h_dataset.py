@@ -84,6 +84,24 @@ from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import E
 _FwdInvPol = Literal["forward_dynamics", "inverse_dynamics", "policy", "joint"]
 
 
+# Per-embodiment effective FPS for embodiments that use a dedicated code path
+# in construct_modality_config_and_transforms and therefore do not appear in
+# EMBODIMENT_REGISTRY. Without this table the fallback would report the raw
+# storage FPS (30 Hz default) instead of the strided training rate.
+#
+# Values must match the ``timestep_interval`` hard-coded in each embodiment's
+# dedicated branch of ``construct_modality_config_and_transforms``
+# (groot_configs.py):
+#   cmr_versius: 60 Hz storage / stride 6 = 10 Hz effective.
+#   suturebot:   30 Hz storage / stride 3 = 10 Hz effective (dedicated
+#                pre-concatenated-action branch; currently unused by the
+#                Open-H specs, which load SutureBot data as jhu_dvrk_mono).
+_OUT_OF_REGISTRY_EFFECTIVE_FPS: dict[str, int] = {
+    "cmr_versius": 10,
+    "suturebot": 10,
+}
+
+
 def _effective_fps_from_registry(registry_entry: dict, default_storage_fps: float = 30.0) -> int:
     """Effective sample-time FPS after the gr00t_dreams ``timestep_interval`` stride.
 
@@ -273,14 +291,22 @@ class OpenHMixedLeRobotDataset(Dataset):
             self.embodiment_tags.append(embodiment)
             self.domain_ids.append(get_domain_id(embodiment))
             registry_entry = EMBODIMENT_REGISTRY.get(embodiment, {})
-            if not registry_entry:
-                # ``cmr_versius`` is handled by a CMR-specific code path inside
-                # ``construct_modality_config_and_transforms`` rather than the
-                # generic registry — fall back to the storage FPS for it.
-                effective_fps = int(round(self._default_storage_fps))
-            else:
+            if registry_entry:
                 effective_fps = _effective_fps_from_registry(
                     registry_entry, default_storage_fps=self._default_storage_fps
+                )
+            elif embodiment in _OUT_OF_REGISTRY_EFFECTIVE_FPS:
+                # Embodiments with dedicated code paths (e.g. cmr_versius) are
+                # not in EMBODIMENT_REGISTRY but have known stride/FPS values.
+                effective_fps = _OUT_OF_REGISTRY_EFFECTIVE_FPS[embodiment]
+            else:
+                effective_fps = int(round(self._default_storage_fps))
+                log.warning(
+                    f"Embodiment {embodiment!r} is neither in EMBODIMENT_REGISTRY nor "
+                    f"_OUT_OF_REGISTRY_EFFECTIVE_FPS; falling back to the raw storage "
+                    f"FPS ({effective_fps} Hz). If this embodiment strides frames "
+                    f"(timestep_interval > 1), conditioning_fps will be WRONG — add it "
+                    f"to _OUT_OF_REGISTRY_EFFECTIVE_FPS."
                 )
             self.effective_fps_per_dataset.append(effective_fps)
 
