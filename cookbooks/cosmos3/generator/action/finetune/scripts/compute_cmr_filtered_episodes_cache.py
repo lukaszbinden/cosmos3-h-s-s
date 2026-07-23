@@ -58,6 +58,19 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
 
+# Each ProcessPool worker reads one parquet file at a time. Prevent NumPy,
+# BLAS, and Arrow from creating their own per-process thread pools; otherwise
+# 64 workers can exceed login-node/cgroup PID limits and abort with
+# ``std::system_error: Resource temporarily unavailable``.
+for _thread_env in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "ARROW_NUM_THREADS",
+):
+    os.environ[_thread_env] = "1"
+
 import numpy as np
 import pyarrow.parquet as pq
 from tqdm import tqdm
@@ -147,7 +160,11 @@ def _filter_episode_cmr_clutch(
         return episode_idx, [], stats
 
     try:
-        table = pq.read_table(parquet_path, columns=["observation.state"])
+        table = pq.read_table(
+            parquet_path,
+            columns=["observation.state"],
+            use_threads=False,
+        )
         state_data = table.column("observation.state").to_pylist()
     except Exception:
         return episode_idx, [], stats
