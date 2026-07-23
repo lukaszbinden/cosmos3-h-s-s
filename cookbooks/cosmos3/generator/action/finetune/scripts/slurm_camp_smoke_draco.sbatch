@@ -111,6 +111,9 @@ srun --container-image="$CONTAINER_IMAGE" \
     # Arm env (empty = unset, matching arm A semantics).
     if [ -n '$CAMP_H' ]; then export COSMOS_OPENH_NUM_HISTORY_ACTIONS='$CAMP_H'; fi
     if [ -n '$CAMP_MEM' ]; then export COSMOS_OPENH_CAMP_MEMORY_TRACKS='$CAMP_MEM'; fi
+    # Global config registration imports the FD module too. This explicit marker
+    # permits that import while retaining the FD launcher's fail-closed guard.
+    export COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP=1
     echo '[camp-smoke] MODEL_LOAD_SOURCE=/arm_a_checkpoint'
     echo '[camp-smoke] ARM_A_MODEL_METADATA_SHA256=$ARM_A_MODEL_METADATA_SHA256'
     echo '[camp-smoke] checkpoint.keys_to_skip_loading=[]'

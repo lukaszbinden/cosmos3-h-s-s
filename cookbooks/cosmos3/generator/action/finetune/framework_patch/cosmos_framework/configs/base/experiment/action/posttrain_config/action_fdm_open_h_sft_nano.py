@@ -69,7 +69,14 @@ _CAMP_ENV_VARS = (
     "COSMOS_OPENH_CAMP_MEMORY_TRACKS",
     "COSMOS_OPENH_MEMORY_ABLATION",
 )
-if any(_os.environ.get(v) for v in _CAMP_ENV_VARS):
+# ``configs/base/config.py`` imports every registered experiment while building
+# the global ConfigStore, including this FD module even when the selected TOML
+# is the mixed experiment. Mixed launchers therefore set the narrow allowance
+# below. An actual FD-only launch with CAMP vars still fails closed.
+_MIXED_REGISTRY_IMPORT = (
+    _os.environ.get("COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP") == "1"
+)
+if any(_os.environ.get(v) for v in _CAMP_ENV_VARS) and not _MIXED_REGISTRY_IMPORT:
     raise RuntimeError(
         f"One of {_CAMP_ENV_VARS} is set, but the FD-only experiment "
         "(action_fdm_open_h_sft_nano) does not support CAMP history/memory. "

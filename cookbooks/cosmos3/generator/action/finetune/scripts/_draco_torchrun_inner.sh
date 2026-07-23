@@ -4,11 +4,20 @@
 
 set -euo pipefail
 
+# The framework's global config registry imports the FD module even when the
+# selected TOML is mixed-mode. Permit that import only when this launch command
+# demonstrably selects the mixed experiment; FD-only launches retain the
+# fail-closed CAMP-env guard.
+if [[ " $* " == *"action_mixed_open_h_sft_nano.toml"* ]]; then
+    export COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP=1
+fi
+
 echo "===== DRACO TORCHRUN INNER START host=$(hostname) time=$(date -Is) ====="
 echo "SLURM_JOB_ID=${SLURM_JOB_ID:-unset} SLURM_NODEID=${SLURM_NODEID:-unset} SLURM_NNODES=${SLURM_NNODES:-unset}"
 echo "MASTER_ADDR=${MASTER_ADDR:-unset} MASTER_PORT=${MASTER_PORT:-unset}"
 echo "COSMOS_OPENH_NUM_HISTORY_ACTIONS=${COSMOS_OPENH_NUM_HISTORY_ACTIONS:-unset}"
 echo "COSMOS_OPENH_STATS_POSTFIX=${COSMOS_OPENH_STATS_POSTFIX:-unset}"
+echo "COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP=${COSMOS_OPENH_MIXED_EXPERIMENT_WITH_CAMP:-unset}"
 echo "CAMP_WARMSTART_DECISION=${CAMP_WARMSTART_DECISION:-unset}"
 echo "ARM_A_CHECKPOINT_SOURCE_HOST=${ARM_A_CHECKPOINT_SOURCE_HOST:-unset}"
 echo "ARM_A_MODEL_METADATA_SHA256=${ARM_A_MODEL_METADATA_SHA256:-unset}"
