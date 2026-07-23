@@ -1119,7 +1119,7 @@ class LeRobotSingleDataset(Dataset):
                 f"    python scripts/compute_cmr_filtered_episodes_cache.py \\\n"
                 f"        --dataset-path {self.dataset_path} \\\n"
                 f"        --split {self.data_split} \\\n"
-                f"        --num-frames {len(action_delta_indices)}\n\n"
+                f"        --num-frames {len(action_delta_indices) + 1}\n\n"
                 f"Or to generate caches for all default CMR datasets:\n"
                 f"    python scripts/compute_cmr_filtered_episodes_cache.py\n"
                 f"{'=' * 80}\n"
@@ -1145,7 +1145,7 @@ class LeRobotSingleDataset(Dataset):
                 f"    python scripts/compute_cmr_filtered_episodes_cache.py \\\n"
                 f"        --dataset-path {self.dataset_path} \\\n"
                 f"        --split {self.data_split} \\\n"
-                f"        --num-frames {len(action_delta_indices)} \\\n"
+                f"        --num-frames {len(action_delta_indices) + 1} \\\n"
                 f"        --force\n"
                 f"{'=' * 80}\n"
             )
