@@ -299,14 +299,20 @@ def generate_one(dataset_path: Path, force: bool, dry_run: bool) -> bool:
     return True
 
 
-def _cmr_leaves_from_specs(root: str | None) -> list[Path]:
+def _cmr_leaves_from_specs(
+    root: str | None,
+    cmr_root: str | None,
+) -> list[Path]:
     from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
     from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
         get_open_h_multi_train_specs,
     )
 
     leaves: list[Path] = []
-    for spec in get_open_h_multi_train_specs(base_path=root):
+    for spec in get_open_h_multi_train_specs(
+        base_path=root,
+        cmr_base_path=cmr_root,
+    ):
         emb = spec["embodiment"]
         emb = emb.value if isinstance(emb, EmbodimentTag) else emb
         if emb == CMR_TAG:
@@ -318,6 +324,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset-path", default=None, help="single CMR leaf dir (contains meta/)")
     ap.add_argument("--root", default=None, help="OPENH_SURGICAL_ROOT; process all CMR leaves in OPEN_H_DATASET_SPECS")
+    ap.add_argument(
+        "--cmr-root",
+        default=os.environ.get("COSMOS_OPENH_CMR_ROOT"),
+        help=(
+            "separate CMR mirror root; defaults to COSMOS_OPENH_CMR_ROOT. "
+            "Processes all four procedure leaves when provided"
+        ),
+    )
     ap.add_argument("--force", action="store_true", help="overwrite an existing modality-44D.json")
     ap.add_argument("--dry-run", action="store_true", help="build + validate, write nothing")
     args = ap.parse_args()
@@ -325,9 +339,9 @@ def main() -> None:
     targets: list[Path] = []
     if args.dataset_path:
         targets.append(Path(args.dataset_path))
-    if args.root or (not args.dataset_path):
+    if args.root or args.cmr_root or (not args.dataset_path):
         try:
-            targets.extend(_cmr_leaves_from_specs(args.root))
+            targets.extend(_cmr_leaves_from_specs(args.root, args.cmr_root))
         except Exception as e:  # noqa: BLE001
             if not args.dataset_path:
                 raise SystemExit(

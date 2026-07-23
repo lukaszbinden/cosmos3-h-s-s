@@ -292,6 +292,36 @@ class TestContractMatchesDataStack:
             ]
         )
 
+    def test_draco_internal_layout_maps_every_non_cmr_leaf(self):
+        """Every EOS-authored leaf must have an explicit Draco counterpart."""
+        pytest.importorskip("torch")
+        try:
+            from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
+                get_open_h_multi_train_specs,
+            )
+        except ImportError as e:
+            pytest.skip(f"cosmos_framework data stack not importable: {e}")
+
+        root = "/draco/Open-H/Surgical"
+        cmr_root = "/draco/Open-H/cmr-surgical-60hz-fixed"
+        specs = get_open_h_multi_train_specs(
+            base_path=root,
+            cmr_base_path=cmr_root,
+            path_layout="draco_internal",
+        )
+        assert len(specs) == 36
+        paths = {spec["path"] for spec in specs}
+        assert f"{root}/JHU/Imerse/previously_collected_data/srth_porcine_chole_fix" in paths
+        assert f"{root}/JHU/LSCR/MIRACLE /Prepare to Pierce" in paths
+        assert f"{root}/Obuda/FRS_Dome_1" in paths
+        assert (
+            f"{root}/Stanford/Collaborative Haptics and Robotics in Medicine Lab/"
+            "Real Robot (dVRK)/Needle Transfer"
+        ) in paths
+        assert f"{root}/Turin/mitic_lerobot_plastic_pad_3DMED" in paths
+        assert f"{root}/TUD/260131_TUNDRA_dataset/grasping_retraction" in paths
+        assert f"{cmr_root}/cholecystectomy" in paths
+
     def test_every_spec_embodiment_has_effective_fps_source(self):
         """Every spec'd embodiment must resolve its effective FPS explicitly.
 

@@ -745,6 +745,14 @@ unsuffixed leaves retain the original-resolution video; the pipeline downsamples
 it once to the model's 832x480 training resolution. Do not use the `*_360p`
 copies, which would be upsampled and would discard source detail.
 `DATASET_PATH` continues to re-root every non-CMR Open-H leaf.
+Draco's internal staging tree is case-sensitive and does not use the EOS
+relative names (`JHU/Imerse`, `Obuda/FRS_Dome_1`, Stanford task names with
+spaces, `Turin/*_3DMED`, and so on). The Draco launcher therefore exports
+`COSMOS_OPENH_PATH_LAYOUT=draco_internal`; the explicit 32-leaf translation is
+defined in `groot_configs.py`. Before torchrun, every node runs
+`preflight_check_openh_dataset_paths.py`, which reports all missing dataset
+directories, metadata, post-transform stats, and CMR caches in one failure
+instead of discovering them one dataset per GPU allocation.
 
 The production launcher fixes `COSMOS_OPENH_NUM_HISTORY_ACTIONS=16`, rejects
 history ablations, loads **all** trained 44D action heads

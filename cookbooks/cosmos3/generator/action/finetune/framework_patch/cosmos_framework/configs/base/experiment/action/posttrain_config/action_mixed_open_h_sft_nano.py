@@ -185,6 +185,7 @@ def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, itera
         # separate fixed-60Hz mirror selected independently below.
         base_path="${oc.env:DATASET_PATH,null}",
         cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
+        path_layout="${oc.env:COSMOS_OPENH_PATH_LAYOUT,public}",
         num_frames=_OPEN_H_NUM_FRAMES,
         data_split=data_split,
         mode=mode,

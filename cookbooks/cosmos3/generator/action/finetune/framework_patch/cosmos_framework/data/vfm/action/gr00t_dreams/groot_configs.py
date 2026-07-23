@@ -1988,20 +1988,108 @@ def _rebase_specs(specs: list[dict], base_path: str | None) -> list[dict]:
     return rebased
 
 
+# The EOS Open-H release and Draco's internal Open-H staging contain the same
+# selected low-dimensional datasets under different case-sensitive paths.
+# Keep the canonical EOS-authored specs unchanged and apply this explicit
+# relative-path translation only when the launcher selects ``draco_internal``.
+# Verified from Draco's on-disk meta/info.json inventory on 2026-07-23.
+_DRACO_OPENH_RELATIVE_PATH_OVERRIDES: dict[str, str] = {
+    # JHU IMERSE.
+    "jhu/imerse/srth_porcine_chole": "JHU/Imerse/previously_collected_data/srth_porcine_chole_fix",
+    "jhu/imerse/wound_closure/point_labeled/fausto_0_1_jesse_0_1_2_labeled": (
+        "JHU/Imerse/Wound_Closure/point_labeled/fausto_0_1_jesse_0_1_2_labeled"
+    ),
+    "jhu/imerse/suturebot": "JHU/Imerse/previously_collected_data/hf_suturebot",
+    "jhu/imerse/nephfat/nephfat": "JHU/Imerse/NephFat_extracted/nephfat",
+    "jhu/imerse/srt_needle_pickup_handover": (
+        "JHU/Imerse/previously_collected_data/srt_needle_pickup+handover"
+    ),
+    "jhu/imerse/cao_cautery_combined": "JHU/Imerse/previously_collected_data/cao_cautery_combined",
+    "jhu/imerse/srt_tissue_lift": "JHU/Imerse/previously_collected_data/srt_tissue_lift",
+    # JHU LCSR MIRACLE. The Draco directory name intentionally has a trailing
+    # space: ``MIRACLE ``.
+    "jhu/lcsr/miracle/prepare_to_pierce": "JHU/LSCR/MIRACLE /Prepare to Pierce",
+    "jhu/lcsr/miracle/needle_pick_up": "JHU/LSCR/MIRACLE /Needle Pick Up",
+    "jhu/lcsr/miracle/needle_regrasp": "JHU/LSCR/MIRACLE /Needle Regrasp",
+    # Obuda.
+    "obuda/frs_dome_1": "Obuda/FRS_Dome_1",
+    "obuda/pork_1": "Obuda/Pork_1",
+    "obuda/pegtransfer_1": "Obuda/PegTransfer_1",
+    "obuda/rollercoaster_1": "Obuda/Rollercoaster_1",
+    "obuda/needlethreading_1": "Obuda/NeedleThreading_1",
+    "obuda/needlethreading_2": "Obuda/NeedleThreading_2",
+    "obuda/seaspike_3": "Obuda/Seaspike_3",
+    "obuda/seaspike_1": "Obuda/Seaspike_1",
+    "obuda/pegtransfer_2": "Obuda/PegTransfer_2",
+    "obuda/seaspike_2": "Obuda/Seaspike_2",
+    "obuda/skinphantom_1": "Obuda/Skinphantom_1",
+    # Stanford real dVRK.
+    "stanford/collaborative_haptics_and_robotics_in_medicine_lab/real_robot_dvrk/needle_transfer": (
+        "Stanford/Collaborative Haptics and Robotics in Medicine Lab/Real Robot (dVRK)/Needle Transfer"
+    ),
+    "stanford/collaborative_haptics_and_robotics_in_medicine_lab/real_robot_dvrk/tissue_retraction": (
+        "Stanford/Collaborative Haptics and Robotics in Medicine Lab/Real Robot (dVRK)/Tissue Retraction"
+    ),
+    "stanford/collaborative_haptics_and_robotics_in_medicine_lab/real_robot_dvrk/peg_transfer": (
+        "Stanford/Collaborative Haptics and Robotics in Medicine Lab/Real Robot (dVRK)/Peg Transfer"
+    ),
+    # Turin, UCSD, UC Berkeley, and TUD.
+    "turin/mitic_lerobot_ex_vivo": "Turin/mitic_lerobot_ex_vivo",
+    "turin/mitic_lerobot_plastic_pad_3dmed": "Turin/mitic_lerobot_plastic_pad_3DMED",
+    "turin/mitic_lerobot_plastic_tube": "Turin/mitic_lerobot_plastic_tube",
+    "turin/mitic_lerobot_plastic_pad": "Turin/mitic_lerobot_plastic_pad",
+    "ucsd/surgical_learning_dataset": "UCSD/surgical_learning_dataset",
+    "ucsd/surgical_learning_dataset2": "UCSD/surgical_learning_dataset2",
+    "ucberkeley/debridement_lerobot": "UCBerkeley/debridement_lerobot",
+    "tud/260131_tundra_dataset/grasping_retraction": (
+        "TUD/260131_TUNDRA_dataset/grasping_retraction"
+    ),
+}
+
+
 def get_open_h_multi_train_specs(
     base_path: str | None = None,
     cmr_base_path: str | None = None,
+    path_layout: str | None = None,
 ) -> list[dict]:
     """Open-H multi-embodiment training mixture (CMR + 13 surgical subsets).
 
     See :data:`OPEN_H_DATASET_SPECS` for the spec list, weighting rationale,
     and per-subset frame counts. ``base_path`` re-roots the public Open-H
     surgical tree. ``cmr_base_path`` independently re-roots the four clinical
-    CMR leaves onto Draco's fixed 60 Hz mirror. The unsuffixed leaves retain
-    original-resolution video, which is downsampled once to the model's
-    832x480 training tier; the ``*_360p`` copies are intentionally not used.
+    CMR leaves onto Draco's fixed 60 Hz mirror. ``path_layout`` defaults to the
+    canonical public/EOS relative layout; ``"draco_internal"`` translates all
+    32 non-CMR leaves to Draco's case-sensitive internal staging layout. The
+    unsuffixed CMR leaves retain original-resolution video, which is downsampled
+    once to the model's 832x480 training tier; the ``*_360p`` copies are
+    intentionally not used.
     """
     specs = _rebase_specs(OPEN_H_DATASET_SPECS, base_path)
+    layout = str(path_layout or "public").strip().lower()
+    if layout not in {"public", "eos", "draco_internal"}:
+        raise ValueError(
+            f"Unknown Open-H path_layout {path_layout!r}; expected "
+            "'public', 'eos', or 'draco_internal'"
+        )
+    if layout == "draco_internal":
+        if not base_path:
+            raise ValueError("path_layout='draco_internal' requires base_path")
+        if not cmr_base_path:
+            raise ValueError("path_layout='draco_internal' requires cmr_base_path")
+        base = _Path(str(base_path))
+        for spec in specs:
+            embodiment = spec["embodiment"]
+            embodiment_value = embodiment.value if isinstance(embodiment, EmbodimentTag) else str(embodiment)
+            if embodiment_value == EmbodimentTag.CMR_VERSIUS.value:
+                continue
+            relative_path = _Path(spec["path"]).relative_to(base).as_posix()
+            try:
+                draco_relative_path = _DRACO_OPENH_RELATIVE_PATH_OVERRIDES[relative_path]
+            except KeyError as exc:
+                raise ValueError(
+                    f"No Draco internal path mapping for Open-H leaf {relative_path!r}"
+                ) from exc
+            spec["path"] = str(base / draco_relative_path)
     if not cmr_base_path:
         return specs
 

@@ -107,6 +107,7 @@ def get_action_openh_sft_dataset(
     *,
     base_path: str | None = None,
     cmr_base_path: str | None = None,
+    path_layout: str | None = None,
     num_frames: int = 13,
     data_split: str = "train",
     mode: str = "forward_dynamics",
@@ -144,7 +145,8 @@ def get_action_openh_sft_dataset(
     defined by ``OPEN_H_DATASET_SPECS`` in ``groot_configs.py``; ``base_path``
     re-roots the public surgical tree (``DATASET_PATH`` /
     ``OPENH_SURGICAL_ROOT``), while ``cmr_base_path`` independently points the
-    four CMR leaves at Draco's fixed 60 Hz mirror.
+    four CMR leaves at Draco's fixed 60 Hz mirror. ``path_layout`` selects the
+    relative naming convention (canonical public/EOS or ``draco_internal``).
 
     CAMP Phase 1: ``num_history_actions`` > 0 makes the base dataset emit a
     per-sample ``"history_action"`` tensor (H rows at the embodiment's native
@@ -165,6 +167,7 @@ def get_action_openh_sft_dataset(
     specs = get_open_h_multi_train_specs(
         base_path=base_path,
         cmr_base_path=cmr_base_path,
+        path_layout=path_layout,
     )
     base = OpenHMixedLeRobotDataset(
         dataset_specs=specs,
