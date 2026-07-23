@@ -241,11 +241,18 @@ def _collect_pre_norm_transform(num_frames: int, embodiment: str, downscaled_res
     if isinstance(config, dict) and "modality_filename" in config:
         modality_filename = config.pop("modality_filename")
 
-    # Strip the normalization + concat tail so per-key transformed arrays remain.
+    # Stats contain only action/state keys. Remove the video modality entirely
+    # so ``get_step_data`` does not decode 13 frames for every sampled window,
+    # and remove video transforms that would otherwise expect those keys.
+    config.pop("video", None)
+
+    # Strip video transforms plus the normalization/concat tail so per-key
+    # transformed action/state arrays remain.
     kept = [
         t
         for t in train_tf.transforms
         if not isinstance(t, (StateActionTransform, ConcatTransform))
+        and not t.__class__.__name__.startswith("Video")
     ]
     return config, modality_filename, ComposedModalityTransform(transforms=kept)
 
@@ -344,9 +351,10 @@ def compute_for_dataset(
     # ``KeyError('video')`` (no merged video key) — and the CUDA tensors would
     # fail on a CPU node anyway. Instead we replicate __getitem__'s core directly:
     #   transform(get_step_data(traj_id, base_index))
-    # which yields exactly the per-key transformed dict (action.* / state.* /
-    # video.<cam>) we accumulate from. ``all_steps[i]`` maps the (possibly
-    # split-trimmed) index to its (trajectory_id, base_index).
+    # which yields exactly the per-key transformed action/state dict we
+    # accumulate from. The stats-only modality config deliberately omits video,
+    # avoiding irrelevant and extremely expensive decoding. ``all_steps[i]``
+    # maps the (possibly split-trimmed) index to its (trajectory_id, base_index).
     all_steps = ds.all_steps
 
     # Accumulate per-key concatenated-over-time arrays.
