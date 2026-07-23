@@ -51,6 +51,7 @@ export LUSTRE_TEAM_HOME="${LUSTRE_TEAM_HOME:-/lustre/fsw/portfolios/healthcareen
 export WORK_DIR="${WORK_DIR:-${SLURM_SUBMIT_DIR}}"
 export CONTAINER_IMAGE="${CONTAINER_IMAGE:-$LUSTRE_HOME/images/pytorch_image.sqsh}"
 export ARM_A_CHECKPOINT_PATH="${ARM_A_CHECKPOINT_PATH:-/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/users/lzbinden/checkpoints/cosmos3-h-surgical-omni-base/iter_000015000}"
+export COSMOS_OPENH_CMR_ROOT="${COSMOS_OPENH_CMR_ROOT:-/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H/cmr-surgical-60hz-fixed}"
 
 # Keep every cache off /home (Draco runbook).
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$LUSTRE_HOME/.cache/uv}"
@@ -62,6 +63,10 @@ export CUDA_CACHE_PATH="${CUDA_CACHE_PATH:-$XDG_CACHE_HOME/nv/ComputeCache}"
 mkdir -p logs "$UV_CACHE_DIR" "$TMPDIR" "$TORCH_HOME" "$PYTORCH_KERNEL_CACHE_PATH" "$CUDA_CACHE_PATH"
 if [[ ! -f "$ARM_A_CHECKPOINT_PATH/model/.metadata" ]]; then
     echo "ERROR: Arm-A checkpoint is missing model/.metadata: $ARM_A_CHECKPOINT_PATH" >&2
+    exit 64
+fi
+if [[ ! -d "$COSMOS_OPENH_CMR_ROOT/cholecystectomy" ]]; then
+    echo "ERROR: Draco CMR mirror is missing: $COSMOS_OPENH_CMR_ROOT" >&2
     exit 64
 fi
 ARM_A_CHECKPOINT_TAG="$(basename "$ARM_A_CHECKPOINT_PATH")"
@@ -78,13 +83,14 @@ case "$SMOKE_ARM" in
 esac
 echo "[camp-smoke] arm=$SMOKE_ARM iters=$SMOKE_ITERS work_dir=$WORK_DIR"
 echo "[camp-smoke] arm_a_checkpoint=$ARM_A_CHECKPOINT_PATH"
+echo "[camp-smoke] cmr_root=$COSMOS_OPENH_CMR_ROOT"
 echo "[camp-smoke] arm_a_model_metadata_sha256=$ARM_A_MODEL_METADATA_SHA256"
 echo "[camp-smoke] WARMSTART_DECISION=WARMSTART_ARM_A_ONCE"
 echo "[camp-smoke] LOAD_ALL_44D_ACTION_HEADS=true"
 echo "[camp-smoke] LOAD_ARM_A_TRAINING_STATE=false"
 
 srun --container-image="$CONTAINER_IMAGE" \
-  --container-mounts="$LUSTRE_HOME:$LUSTRE_HOME,$LUSTRE_TEAM_HOME:$LUSTRE_TEAM_HOME,$ARM_A_CHECKPOINT_PATH:/arm_a_checkpoint:ro,/tmp:/tmp,/dev/shm:/dev/shm" \
+  --container-mounts="$LUSTRE_HOME:$LUSTRE_HOME,$LUSTRE_TEAM_HOME:$LUSTRE_TEAM_HOME,$COSMOS_OPENH_CMR_ROOT:$COSMOS_OPENH_CMR_ROOT:ro,$ARM_A_CHECKPOINT_PATH:/arm_a_checkpoint:ro,/tmp:/tmp,/dev/shm:/dev/shm" \
   bash -c "
     set -euo pipefail
     cd '$WORK_DIR'
@@ -95,6 +101,7 @@ srun --container-image="$CONTAINER_IMAGE" \
     # Arms A/B/C all branch from the same trained 44D Arm-A checkpoint. Do not
     # inherit env.sh's public 64D Cosmos3-Nano BASE_CHECKPOINT_PATH.
     export BASE_CHECKPOINT_PATH=/arm_a_checkpoint
+    export COSMOS_OPENH_CMR_ROOT='$COSMOS_OPENH_CMR_ROOT'
 
     # Framework venv built by setup_workspace.sh (uv sync inside the container).
     source \"\$WORKSPACE/packages/cosmos3/.venv/bin/activate\"

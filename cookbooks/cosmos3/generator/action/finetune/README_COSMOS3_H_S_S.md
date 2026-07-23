@@ -736,6 +736,16 @@ Arm C must use the same Arm-A warm-start; the shared CAMP smoke launcher now
 mounts this checkpoint explicitly and clears `checkpoint.keys_to_skip_loading`
 so none of the trained 44D action heads are reinitialized.
 
+On Draco, CMR is not nested under the public `Open-H/Surgical` root. The
+launchers set `COSMOS_OPENH_CMR_ROOT` independently to
+`/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H/cmr-surgical-60hz-fixed`;
+the four procedure leaves are
+`{cholecystectomy,hysterectomy,inguinal_hernia,prostatectomy}`. These
+unsuffixed leaves retain the original-resolution video; the pipeline downsamples
+it once to the model's 832x480 training resolution. Do not use the `*_360p`
+copies, which would be upsampled and would discard source detail.
+`DATASET_PATH` continues to re-root every non-CMR Open-H leaf.
+
 The production launcher fixes `COSMOS_OPENH_NUM_HISTORY_ACTIONS=16`, rejects
 history ablations, loads **all** trained 44D action heads
 (`checkpoint.keys_to_skip_loading=[]`), and writes to the isolated

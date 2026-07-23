@@ -320,6 +320,7 @@ action_fdm_open_h_sft_nano = LazyDict(
                             # only to re-root ALL specs elsewhere (rebases by the
                             # full relative path under the surgical root).
                             base_path="${oc.env:DATASET_PATH,null}",
+                            cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
                             num_frames=_OPEN_H_NUM_FRAMES,
                             data_split="train",
                             mode="forward_dynamics",
@@ -383,6 +384,7 @@ action_fdm_open_h_sft_nano = LazyDict(
                         ratio=1,
                         dataset=L(get_action_openh_sft_dataset)(
                             base_path="${oc.env:DATASET_PATH,null}",
+                            cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
                             num_frames=_OPEN_H_NUM_FRAMES,
                             data_split="test",  # held-out 0.02 split (vs train above)
                             mode="forward_dynamics",

@@ -38,7 +38,7 @@ Usage::
 
     # Compute cache for a single dataset:
     python scripts/compute_cmr_filtered_episodes_cache.py \\
-        --dataset-path /lustre/fs11/.../cmr-surgical-60hz-fixed/prostatectomy_360p
+        --dataset-path /lustre/fs11/.../cmr-surgical-60hz-fixed/prostatectomy
 
     # Recompute caches even if files exist:
     python scripts/compute_cmr_filtered_episodes_cache.py --force
@@ -96,10 +96,10 @@ _CMR_BASE = (
     "datasets/Open-H/cmr-surgical-60hz-fixed"
 )
 DEFAULT_CMR_DATASET_PATHS = [
-    f"{_CMR_BASE}/cholecystectomy_360p",
-    f"{_CMR_BASE}/hysterectomy_360p",
-    f"{_CMR_BASE}/inguinal_hernia_360p",
-    f"{_CMR_BASE}/prostatectomy_360p",
+    f"{_CMR_BASE}/cholecystectomy",
+    f"{_CMR_BASE}/hysterectomy",
+    f"{_CMR_BASE}/inguinal_hernia",
+    f"{_CMR_BASE}/prostatectomy",
 ]
 
 

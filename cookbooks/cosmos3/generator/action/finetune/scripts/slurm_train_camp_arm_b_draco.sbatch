@@ -104,6 +104,10 @@ DRACO_OPENH_SURGICAL_ROOT="${DRACO_OPENH_SURGICAL_ROOT:-$DRACO_PROJECT_ROOT/data
 OPENH_SURGICAL_ROOT="$DRACO_OPENH_SURGICAL_ROOT"
 # Always re-root the EOS-authored specs onto Draco's canonical fs11 tree.
 DATASET_PATH="$OPENH_SURGICAL_ROOT"
+# Draco's clinical CMR mirror is outside the public Surgical tree. Use the
+# unsuffixed original-resolution leaves; the data pipeline downsamples them
+# once to the model's 832x480 training tier.
+COSMOS_OPENH_CMR_ROOT="${COSMOS_OPENH_CMR_ROOT:-$DRACO_PROJECT_ROOT/datasets/Open-H/cmr-surgical-60hz-fixed}"
 CONTAINER_IMAGE="${COSMOS3_CONTAINER:-$DRACO_USER_ROOT/images/cosmos3.sqsh}"
 DRACO_NVML_PATH="${DRACO_NVML_PATH:-$DRACO_USER_ROOT/images/nvidia-pinned}"
 HOST_HOME="${HOST_HOME:-$HOME}"
@@ -119,6 +123,16 @@ if [[ ! -d "$OPENH_SURGICAL_ROOT" ]]; then
     echo "FATAL: Draco Open-H surgical root missing: $OPENH_SURGICAL_ROOT" >&2
     exit 64
 fi
+for cmr_leaf in \
+    cholecystectomy \
+    hysterectomy \
+    inguinal_hernia \
+    prostatectomy; do
+    if [[ ! -d "$COSMOS_OPENH_CMR_ROOT/$cmr_leaf" ]]; then
+        echo "FATAL: Draco CMR leaf missing: $COSMOS_OPENH_CMR_ROOT/$cmr_leaf" >&2
+        exit 64
+    fi
+done
 if [[ ! -f "$CONTAINER_IMAGE" ]]; then
     echo "FATAL: Draco Cosmos3 image missing: $CONTAINER_IMAGE" >&2
     exit 64
@@ -222,6 +236,7 @@ echo "  nodes=${SLURM_NNODES:-?} gpus=$((SLURM_NNODES * 8)) workspace=$WORKSPACE
 echo "  base_44d=$CAMP_ARM_B_BASE_CHECKPOINT_PATH"
 echo "  base_model_metadata_sha256=$_ARM_A_METADATA_SHA256"
 echo "  openh_root=$OPENH_SURGICAL_ROOT"
+echo "  cmr_root=$COSMOS_OPENH_CMR_ROOT"
 echo "  stats_postfix=$COSMOS_OPENH_STATS_POSTFIX"
 echo "  history_actions=$COSMOS_OPENH_NUM_HISTORY_ACTIONS"
 echo "  run_dir=$_RUN_DIR"
@@ -291,7 +306,7 @@ srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",HF_HOME="$HF_HOME",OPENH_SURGICAL_ROOT="$OPENH_SURGICAL_ROOT",DATASET_PATH="$DATASET_PATH",COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX",COSMOS_OPENH_NUM_HISTORY_ACTIONS=16,COSMOS_OPENH_DEBUG_INIT="${COSMOS_OPENH_DEBUG_INIT:-0}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh",CAMP_WARMSTART_DECISION="$CAMP_WARMSTART_DECISION",ARM_A_CHECKPOINT_SOURCE_HOST="$CAMP_ARM_B_BASE_CHECKPOINT_PATH",ARM_A_MODEL_METADATA_SHA256="$_ARM_A_METADATA_SHA256" \
+    --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",HF_HOME="$HF_HOME",OPENH_SURGICAL_ROOT="$OPENH_SURGICAL_ROOT",DATASET_PATH="$DATASET_PATH",COSMOS_OPENH_CMR_ROOT="$COSMOS_OPENH_CMR_ROOT",COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX",COSMOS_OPENH_NUM_HISTORY_ACTIONS=16,COSMOS_OPENH_DEBUG_INIT="${COSMOS_OPENH_DEBUG_INIT:-0}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh",CAMP_WARMSTART_DECISION="$CAMP_WARMSTART_DECISION",ARM_A_CHECKPOINT_SOURCE_HOST="$CAMP_ARM_B_BASE_CHECKPOINT_PATH",ARM_A_MODEL_METADATA_SHA256="$_ARM_A_METADATA_SHA256" \
     bash "$COOKBOOK_MOUNT/scripts/_draco_torchrun_inner.sh" \
     -m cosmos_framework.scripts.train \
     --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_mixed_open_h_sft_nano.toml" \

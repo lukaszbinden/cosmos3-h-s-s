@@ -106,6 +106,7 @@ class _OpenHShuffleBlockAdapter(Dataset):
 def get_action_openh_sft_dataset(
     *,
     base_path: str | None = None,
+    cmr_base_path: str | None = None,
     num_frames: int = 13,
     data_split: str = "train",
     mode: str = "forward_dynamics",
@@ -141,9 +142,9 @@ def get_action_openh_sft_dataset(
     Args mirror ``get_action_droid_sft_dataset`` where they overlap. The
     Open-H mixture itself (paths, per-embodiment transforms, mix ratios) is
     defined by ``OPEN_H_DATASET_SPECS`` in ``groot_configs.py``; ``base_path``
-    re-roots every spec under a caller-provided directory (``DATASET_PATH`` /
-    ``OPENH_SURGICAL_ROOT``) and is ``None`` to use the registry's absolute
-    paths verbatim.
+    re-roots the public surgical tree (``DATASET_PATH`` /
+    ``OPENH_SURGICAL_ROOT``), while ``cmr_base_path`` independently points the
+    four CMR leaves at Draco's fixed 60 Hz mirror.
 
     CAMP Phase 1: ``num_history_actions`` > 0 makes the base dataset emit a
     per-sample ``"history_action"`` tensor (H rows at the embodiment's native
@@ -161,7 +162,10 @@ def get_action_openh_sft_dataset(
     code rows with 19-row conditioning plans.  ``camp_memory_ablation``
     (``zero`` / ``shuffle_episode``) is the Phase-5 eval grid.
     """
-    specs = get_open_h_multi_train_specs(base_path=base_path)
+    specs = get_open_h_multi_train_specs(
+        base_path=base_path,
+        cmr_base_path=cmr_base_path,
+    )
     base = OpenHMixedLeRobotDataset(
         dataset_specs=specs,
         num_frames=num_frames,

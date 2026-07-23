@@ -1988,13 +1988,43 @@ def _rebase_specs(specs: list[dict], base_path: str | None) -> list[dict]:
     return rebased
 
 
-def get_open_h_multi_train_specs(base_path: str | None = None) -> list[dict]:
+def get_open_h_multi_train_specs(
+    base_path: str | None = None,
+    cmr_base_path: str | None = None,
+) -> list[dict]:
     """Open-H multi-embodiment training mixture (CMR + 13 surgical subsets).
 
     See :data:`OPEN_H_DATASET_SPECS` for the spec list, weighting rationale,
-    and per-subset frame counts.
+    and per-subset frame counts. ``base_path`` re-roots the public Open-H
+    surgical tree. ``cmr_base_path`` independently re-roots the four clinical
+    CMR leaves onto Draco's fixed 60 Hz mirror. The unsuffixed leaves retain
+    original-resolution video, which is downsampled once to the model's
+    832x480 training tier; the ``*_360p`` copies are intentionally not used.
     """
-    return _rebase_specs(OPEN_H_DATASET_SPECS, base_path)
+    specs = _rebase_specs(OPEN_H_DATASET_SPECS, base_path)
+    if not cmr_base_path:
+        return specs
+
+    cmr_leaf_names = {
+        "cholecystectomy",
+        "hysterectomy",
+        "inguinal_hernia",
+        "prostatectomy",
+    }
+    cmr_root = _Path(str(cmr_base_path))
+    for spec in specs:
+        embodiment = spec["embodiment"]
+        embodiment_value = embodiment.value if isinstance(embodiment, EmbodimentTag) else str(embodiment)
+        if embodiment_value != EmbodimentTag.CMR_VERSIUS.value:
+            continue
+        procedure = _Path(spec["path"]).name
+        if procedure not in cmr_leaf_names:
+            raise ValueError(
+                f"Unknown CMR procedure leaf {procedure!r}; expected one of "
+                f"{sorted(cmr_leaf_names)}"
+            )
+        spec["path"] = str(cmr_root / procedure)
+    return specs
 
 
 def get_jhu_dvrk_mono_finetune_train_specs(base_path: str | None = None) -> list[dict]:

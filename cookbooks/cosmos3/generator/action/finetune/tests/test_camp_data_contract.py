@@ -265,6 +265,33 @@ class TestContractMatchesDataStack:
             pytest.skip(f"cosmos_framework data stack not importable: {e}")
         assert MAX_ACTION_DIM == ACTION_DIM
 
+    def test_draco_cmr_root_rebases_to_original_resolution_leaves(self):
+        """The separate Draco CMR mirror must not inherit DATASET_PATH."""
+        pytest.importorskip("torch")
+        try:
+            from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
+                get_open_h_multi_train_specs,
+            )
+        except ImportError as e:
+            pytest.skip(f"cosmos_framework data stack not importable: {e}")
+
+        cmr_root = "/draco/cmr-surgical-60hz-fixed"
+        specs = get_open_h_multi_train_specs(
+            base_path="/draco/public/Surgical",
+            cmr_base_path=cmr_root,
+        )
+        cmr_paths = sorted(
+            spec["path"] for spec in specs if spec["embodiment"].value == "cmr_versius"
+        )
+        assert cmr_paths == sorted(
+            [
+                f"{cmr_root}/cholecystectomy",
+                f"{cmr_root}/hysterectomy",
+                f"{cmr_root}/inguinal_hernia",
+                f"{cmr_root}/prostatectomy",
+            ]
+        )
+
     def test_every_spec_embodiment_has_effective_fps_source(self):
         """Every spec'd embodiment must resolve its effective FPS explicitly.
 

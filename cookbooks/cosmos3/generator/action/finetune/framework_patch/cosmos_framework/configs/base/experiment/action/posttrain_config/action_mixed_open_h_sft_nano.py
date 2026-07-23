@@ -181,9 +181,10 @@ def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, itera
     the single source of truth for both train and val entries below.
     """
     return L(get_action_openh_sft_dataset)(
-        # ``None`` -> use OPEN_H_DATASET_SPECS' absolute paths verbatim. Set
-        # DATASET_PATH only to re-root ALL specs elsewhere.
+        # DATASET_PATH re-roots the public surgical tree; Draco stores CMR in a
+        # separate fixed-60Hz mirror selected independently below.
         base_path="${oc.env:DATASET_PATH,null}",
+        cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
         num_frames=_OPEN_H_NUM_FRAMES,
         data_split=data_split,
         mode=mode,
