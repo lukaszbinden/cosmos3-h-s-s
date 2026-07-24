@@ -124,6 +124,7 @@ HF_HOME="${HF_HOME:-$DRACO_USER_ROOT/.hf_cache}"
 WANDB_MODE="${WANDB_MODE:-offline}"
 # Likewise, keep Arm B out of a stale EOS/local output root from env.sh.
 OUTPUTS="${CAMP_ARM_B_OUTPUT_ROOT:-$DRACO_USER_ROOT/imaginaire/output}"
+export IMAGINAIRE_OUTPUT_ROOT="$OUTPUTS"
 UV_CACHE_DIR="${UV_CACHE_DIR:-$DRACO_USER_ROOT/.uv_cache}"
 UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$WORKSPACE/.uv-python}"
 COSMOS_OPENH_STATS_POSTFIX="${COSMOS_OPENH_STATS_POSTFIX:-c3hss-v1}"
@@ -184,7 +185,7 @@ if [[ "$VENV_PYTHON_TARGET" == /*/cpython-*/bin/python* ]]; then
     VENV_UV_MOUNT_SOURCE="$(readlink -f "$VENV_UV_INSTALL_DIR")"
 fi
 
-_RUN_DIR="$OUTPUTS/cosmos3_action_surgical/$CAMP_ARM_B_RUN_GROUP/$CAMP_ARM_B_RUN_NAME"
+_RUN_DIR="$IMAGINAIRE_OUTPUT_ROOT/cosmos3_action_surgical/$CAMP_ARM_B_RUN_GROUP/$CAMP_ARM_B_RUN_NAME"
 _LATEST_CKPT_FILE="$_RUN_DIR/checkpoints/latest_checkpoint.txt"
 _WARMSTART_MARKER="$_RUN_DIR/arm_a_warmstart_attempt.env"
 _ARM_A_METADATA_SHA256="$(sha256sum "$CAMP_ARM_B_BASE_CHECKPOINT_PATH/model/.metadata" | awk '{print $1}')"
@@ -212,6 +213,10 @@ if [[ -s "$_LATEST_CKPT_FILE" ]]; then
         echo "WARN: Arm-B checkpoint exists without a warm-start marker (legacy run?)." >&2
     fi
 elif [[ -e "$_WARMSTART_MARKER" ]]; then
+    if [[ -n "${SLURM_ARRAY_JOB_ID:-}" ]]; then
+        echo "Holding remaining array tasks after startup invariant failure." >&2
+        scontrol hold "$SLURM_ARRAY_JOB_ID" || true
+    fi
     echo "FATAL: Arm-A warm-start was already attempted, but Arm B has no" >&2
     echo "       latest_checkpoint.txt. Refusing to warm-start a second time." >&2
     echo "       marker=$_WARMSTART_MARKER" >&2
@@ -248,6 +253,7 @@ echo "  openh_root=$OPENH_SURGICAL_ROOT"
 echo "  cmr_root=$COSMOS_OPENH_CMR_ROOT"
 echo "  stats_postfix=$COSMOS_OPENH_STATS_POSTFIX"
 echo "  history_actions=$COSMOS_OPENH_NUM_HISTORY_ACTIONS"
+echo "  imaginaire_output_root=$IMAGINAIRE_OUTPUT_ROOT"
 echo "  run_dir=$_RUN_DIR"
 echo "  warmstart_marker=$_WARMSTART_MARKER"
 if [[ -f "$_WARMSTART_MARKER" ]]; then
@@ -277,7 +283,6 @@ MOUNTS="$MOUNTS,$DRACO_USERS_ROOT:$DRACO_USERS_ROOT:ro"
 MOUNTS="$MOUNTS,$DRACO_NVML_PATH:/opt/nvidia-pinned:ro"
 MOUNTS="$MOUNTS,$WORKSPACE/packages/cosmos3:/workspace"
 MOUNTS="$MOUNTS,$COOKBOOK_DIR:$COOKBOOK_MOUNT"
-MOUNTS="$MOUNTS,$OUTPUTS:/outputs"
 MOUNTS="$MOUNTS,$CAMP_ARM_B_BASE_CHECKPOINT_PATH:/ckpt:ro"
 MOUNTS="$MOUNTS,$WAN_VAE_PATH:$WAN_VAE_MOUNT:ro"
 MOUNTS="$MOUNTS,$WORKSPACE/.cache:/root/.cache"
@@ -315,7 +320,7 @@ srun --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT=/outputs,WANDB_MODE="$WANDB_MODE",HF_HOME="$HF_HOME",OPENH_SURGICAL_ROOT="$OPENH_SURGICAL_ROOT",DATASET_PATH="$DATASET_PATH",COSMOS_OPENH_CMR_ROOT="$COSMOS_OPENH_CMR_ROOT",COSMOS_OPENH_LZ_ROOT="$COSMOS_OPENH_LZ_ROOT",COSMOS_OPENH_PATH_LAYOUT="$COSMOS_OPENH_PATH_LAYOUT",COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX",COSMOS_OPENH_NUM_HISTORY_ACTIONS=16,COSMOS_OPENH_DEBUG_INIT="${COSMOS_OPENH_DEBUG_INIT:-0}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh",CAMP_WARMSTART_DECISION="$CAMP_WARMSTART_DECISION",ARM_A_CHECKPOINT_SOURCE_HOST="$CAMP_ARM_B_BASE_CHECKPOINT_PATH",ARM_A_MODEL_METADATA_SHA256="$_ARM_A_METADATA_SHA256" \
+    --export=ALL,MASTER_ADDR="$MASTER_ADDR",MASTER_PORT="$MASTER_PORT",BASE_CHECKPOINT_PATH=/ckpt,WAN_VAE_PATH="$WAN_VAE_MOUNT",IMAGINAIRE_OUTPUT_ROOT="$IMAGINAIRE_OUTPUT_ROOT",WANDB_MODE="$WANDB_MODE",HF_HOME="$HF_HOME",OPENH_SURGICAL_ROOT="$OPENH_SURGICAL_ROOT",DATASET_PATH="$DATASET_PATH",COSMOS_OPENH_CMR_ROOT="$COSMOS_OPENH_CMR_ROOT",COSMOS_OPENH_LZ_ROOT="$COSMOS_OPENH_LZ_ROOT",COSMOS_OPENH_PATH_LAYOUT="$COSMOS_OPENH_PATH_LAYOUT",COSMOS_OPENH_STATS_POSTFIX="$COSMOS_OPENH_STATS_POSTFIX",COSMOS_OPENH_NUM_HISTORY_ACTIONS=16,COSMOS_OPENH_DEBUG_INIT="${COSMOS_OPENH_DEBUG_INIT:-0}",COSMOS3_APPLY_OVERLAY="$COOKBOOK_MOUNT/scripts/apply_overlay.sh",CAMP_WARMSTART_DECISION="$CAMP_WARMSTART_DECISION",ARM_A_CHECKPOINT_SOURCE_HOST="$CAMP_ARM_B_BASE_CHECKPOINT_PATH",ARM_A_MODEL_METADATA_SHA256="$_ARM_A_METADATA_SHA256" \
     bash "$COOKBOOK_MOUNT/scripts/_draco_torchrun_inner.sh" \
     -m cosmos_framework.scripts.train \
     --sft-toml="$COOKBOOK_MOUNT/toml/sft_config/action_mixed_open_h_sft_nano.toml" \

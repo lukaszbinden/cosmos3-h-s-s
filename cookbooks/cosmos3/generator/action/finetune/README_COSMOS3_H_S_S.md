@@ -766,6 +766,10 @@ so each segment produces a resumable save before wall time. Later segments
 auto-resume only Arm B's own optimizer/scheduler/EMA state. Do not signal the
 outer `torchrun` step for checkpointing: Torch Elastic intercepts SIGTERM and
 terminates trainer/DataLoader children before the framework callback can save.
+The launcher forces one canonical host/container output root,
+`$DRACO_USER_ROOT/imaginaire/output` (override:
+`CAMP_ARM_B_OUTPUT_ROOT`); the warm-start marker, `latest_checkpoint.txt`, and
+all `iter_*` directories must live beneath that same root.
 
 **Warm-start audit across Draco's 4-hour segments.** The first Arm-B segment
 atomically writes `arm_a_warmstart_attempt.env` in the Arm-B run directory and
@@ -782,8 +786,9 @@ RESUME_SOURCE=<Arm-B checkpoint>
 ```
 
 If a warm-start marker exists but no Arm-B checkpoint was produced, the next
-segment fails instead of silently applying Arm A again. Inspect the first log;
-only remove the marker manually when deliberately restarting Arm B from Arm A.
+segment holds the remaining array and fails instead of silently applying Arm A
+again. Inspect the first log; only remove the marker manually when deliberately
+restarting Arm B from Arm A.
 The Arm-C smoke logs the same source checkpoint, metadata hash, all-head load,
 and model-only warm-start. A future resumable Arm-C production launcher must
 use the same marker/own-checkpoint guard.
