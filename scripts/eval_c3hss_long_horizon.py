@@ -168,15 +168,6 @@ def main() -> None:
     config.trainer.run_validation = False
     config.validate()
     config.freeze()
-    trainer = config.trainer.type(config)
-    with model_init():
-        model = instantiate(config.model)
-    mem_fmt = _memory_format(getattr(config.trainer, "memory_format", None))
-    model = model.to("cuda", memory_format=mem_fmt)
-    model.on_train_start(mem_fmt)
-    model.eval()
-    loaded_iteration = trainer.checkpointer.load(model, optimizer=None, scheduler=None, grad_scaler=None)
-    log.info(f"Loaded C3-H-S-S checkpoint; loader iteration={loaded_iteration}")
 
     base = OpenHMixedLeRobotDataset(
         dataset_specs=[{"path": args.dataset, "embodiment": args.embodiment, "mix_ratio": 1.0}],
@@ -215,6 +206,20 @@ def main() -> None:
     missing = sorted(required - set(index_by_pair))
     if missing:
         raise RuntimeError(f"Missing matched episode/base-index pairs: {missing}")
+
+    # Validate dataset metadata, normalization provenance, and every requested
+    # episode/base-index pair before reading the large distributed checkpoint.
+    # A bad eval selection should fail in seconds rather than after minutes of
+    # Lustre I/O.
+    trainer = config.trainer.type(config)
+    with model_init():
+        model = instantiate(config.model)
+    mem_fmt = _memory_format(getattr(config.trainer, "memory_format", None))
+    model = model.to("cuda", memory_format=mem_fmt)
+    model.on_train_start(mem_fmt)
+    model.eval()
+    loaded_iteration = trainer.checkpointer.load(model, optimizer=None, scheduler=None, grad_scaler=None)
+    log.info(f"Loaded C3-H-S-S checkpoint; loader iteration={loaded_iteration}")
 
     torch.set_grad_enabled(False)
     results = []
