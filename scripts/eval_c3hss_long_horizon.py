@@ -43,6 +43,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-sampling-step", type=int, default=16)
     p.add_argument("--fps", type=int, default=10)
     p.add_argument(
+        "--num-history-actions",
+        type=int,
+        default=0,
+        help=(
+            "Number of executed actions preceding each forward-dynamics window "
+            "to condition on. Use 16 for CAMP Arm B."
+        ),
+    )
+    p.add_argument(
         "--score-size",
         type=int,
         nargs=2,
@@ -92,6 +101,8 @@ def _score_pair(
 
 def main() -> None:
     args = parse_args()
+    if args.num_history_actions < 0:
+        raise ValueError("--num-history-actions must be non-negative")
     dataset_name = Path(args.dataset).name
     with distributed_init():
         distributed.init()
@@ -139,6 +150,7 @@ def main() -> None:
         max_action_dim=44,
         mode="forward_dynamics",
         viewpoint="third_person_view",
+        num_history_actions=args.num_history_actions,
     )
     transform = ActionTransformPipeline(
         tokenizer_config=config.model.config.vlm_config.tokenizer,
@@ -212,6 +224,19 @@ def main() -> None:
             # the padded canvas* makes the next encode crop its upper-left content
             # region, causing a progressive zoom/shift at every chunk boundary.
             raw_sample = base[index_by_pair[(episode_id, base_index)]]
+            if args.num_history_actions:
+                history_action = raw_sample.get("history_action")
+                if not isinstance(history_action, torch.Tensor):
+                    raise RuntimeError(
+                        "CAMP evaluation requested action history, but the dataset "
+                        "sample did not emit history_action"
+                    )
+                if history_action.shape[0] != args.num_history_actions:
+                    raise RuntimeError(
+                        "history_action row count does not match the requested "
+                        f"history length: {history_action.shape[0]} != "
+                        f"{args.num_history_actions}"
+                    )
             # Work at the dataset's native preprocessed content size.  For the
             # fixed mixed-mode run this is true 832x480 CMR content, matching its
             # training pipeline.  Any common-grid resizing happens only after
@@ -289,6 +314,12 @@ def main() -> None:
         "seed": args.seed,
         "guidance": args.guidance,
         "num_sampling_step": args.num_sampling_step,
+        "num_history_actions": args.num_history_actions,
+        "history_source": (
+            "dataset executed actions immediately preceding each rollout window"
+            if args.num_history_actions
+            else None
+        ),
         "inference_mode": "forward_dynamics",
         "rollout_space": "native unpadded dataset content",
         "scoring_space": (
