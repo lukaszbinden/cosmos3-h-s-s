@@ -26,7 +26,6 @@ from fds_metrics import compute_frame_decay, resize_video_uint8, video_tensor_to
 
 
 CHUNK_SIZE = 12
-TIMESTEP_INTERVAL = 6
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +35,37 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset", required=True)
     p.add_argument("--output-dir", required=True)
     p.add_argument("--episodes", type=int, nargs="+", required=True)
+    p.add_argument(
+        "--embodiment",
+        choices=sorted(tag.value for tag in EmbodimentTag),
+        default=EmbodimentTag.CMR_VERSIUS.value,
+        help="Dataset embodiment tag. Use jhu_dvrk_mono for canonical JHU dVRK data.",
+    )
+    p.add_argument(
+        "--data-split",
+        choices=("train", "test", "full"),
+        default="test",
+        help="Dataset partition to enumerate.",
+    )
+    p.add_argument("--test-split-ratio", type=float, default=0.05)
+    p.add_argument(
+        "--timestep-interval",
+        type=int,
+        default=6,
+        help=(
+            "Raw dataset-frame stride between 10 Hz model timesteps "
+            "(CMR=6, canonical JHU dVRK mono=3)."
+        ),
+    )
+    p.add_argument(
+        "--start-base-index",
+        type=int,
+        default=0,
+        help=(
+            "Raw-frame base index for the first rollout window. A positive value "
+            "allows the first CAMP window to use real, non-boundary-padded history."
+        ),
+    )
     p.add_argument("--iteration", type=int, default=8000)
     p.add_argument("--max-chunks", type=int, default=9)
     p.add_argument("--seed", type=int, default=0)
@@ -103,6 +133,12 @@ def main() -> None:
     args = parse_args()
     if args.num_history_actions < 0:
         raise ValueError("--num-history-actions must be non-negative")
+    if args.timestep_interval <= 0:
+        raise ValueError("--timestep-interval must be positive")
+    if args.start_base_index < 0:
+        raise ValueError("--start-base-index must be non-negative")
+    if not 0.0 < args.test_split_ratio < 1.0:
+        raise ValueError("--test-split-ratio must be in (0, 1)")
     dataset_name = Path(args.dataset).name
     with distributed_init():
         distributed.init()
@@ -143,10 +179,10 @@ def main() -> None:
     log.info(f"Loaded C3-H-S-S checkpoint; loader iteration={loaded_iteration}")
 
     base = OpenHMixedLeRobotDataset(
-        dataset_specs=[{"path": args.dataset, "embodiment": EmbodimentTag.CMR_VERSIUS, "mix_ratio": 1.0}],
+        dataset_specs=[{"path": args.dataset, "embodiment": args.embodiment, "mix_ratio": 1.0}],
         num_frames=13,
-        data_split="test",
-        test_split_ratio=0.05,
+        data_split=args.data_split,
+        test_split_ratio=args.test_split_ratio,
         max_action_dim=44,
         mode="forward_dynamics",
         viewpoint="third_person_view",
@@ -166,7 +202,10 @@ def main() -> None:
         append_idle_frames=False,
     )
     required = {
-        (episode_id, chunk * CHUNK_SIZE * TIMESTEP_INTERVAL)
+        (
+            episode_id,
+            args.start_base_index + chunk * CHUNK_SIZE * args.timestep_interval,
+        )
         for episode_id in args.episodes
         for chunk in range(args.max_chunks)
     }
@@ -216,7 +255,9 @@ def main() -> None:
         generated_chunks: list[np.ndarray] = []
         current_frame: np.ndarray | None = None
         for chunk in range(args.max_chunks):
-            base_index = chunk * CHUNK_SIZE * TIMESTEP_INTERVAL
+            base_index = (
+                args.start_base_index + chunk * CHUNK_SIZE * args.timestep_interval
+            )
             # Work in the raw, unpadded content space for autoregressive feedback.
             # ActionTransformPipeline pads CMR video to the model canvas and records
             # the true content bounds in image_size.  The decoder removes that
@@ -237,10 +278,10 @@ def main() -> None:
                         f"history length: {history_action.shape[0]} != "
                         f"{args.num_history_actions}"
                     )
-            # Work at the dataset's native preprocessed content size.  For the
-            # fixed mixed-mode run this is true 832x480 CMR content, matching its
-            # training pipeline.  Any common-grid resizing happens only after
-            # the complete native-resolution rollout, immediately before FDS.
+            # Work at the dataset's native preprocessed content size (for
+            # example, 832x480 CMR or 960x544 JHU dVRK), matching each
+            # embodiment's training pipeline. Any common-grid resizing happens
+            # only after the complete native-resolution rollout, before FDS.
             gt_chunk = _tensor_video_uint8(raw_sample["video"])
             gt_chunks.append(gt_chunk)
 
@@ -306,11 +347,14 @@ def main() -> None:
         "checkpoint_loader_iteration": int(loaded_iteration),
         "dataset": args.dataset,
         "dataset_name": dataset_name,
-        "data_split": "test (trailing 5%)",
+        "embodiment": args.embodiment,
+        "data_split": args.data_split,
+        "test_split_ratio": args.test_split_ratio,
         "episodes": args.episodes,
         "max_chunks": args.max_chunks,
         "chunk_size": CHUNK_SIZE,
-        "timestep_interval": TIMESTEP_INTERVAL,
+        "timestep_interval": args.timestep_interval,
+        "start_base_index": args.start_base_index,
         "seed": args.seed,
         "guidance": args.guidance,
         "num_sampling_step": args.num_sampling_step,
