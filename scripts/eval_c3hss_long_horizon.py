@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Matched-episode autoregressive long-horizon evaluator for C3-H-S-S."""
+"""Matched-episode long-horizon evaluator for C3-H-S-S.
+
+Supports both the production-style autoregressive rollout and a diagnostic
+teacher-forced mode that resets every chunk from its matched ground-truth
+initial frame while leaving actions and history unchanged.
+"""
 
 from __future__ import annotations
 
@@ -90,6 +95,17 @@ def parse_args() -> argparse.Namespace:
         help="Optional common FDS grid; rollout and saved videos remain at native resolution.",
     )
     p.add_argument("--resume-existing-videos", action="store_true")
+    p.add_argument(
+        "--rollout-conditioning",
+        choices=("autoregressive", "teacher_forced"),
+        default="autoregressive",
+        help=(
+            "How to condition chunks after the first. 'autoregressive' feeds "
+            "the previous generated endpoint back into the model; "
+            "'teacher_forced' retains each chunk's matched ground-truth first "
+            "frame. Actions and action history are identical in both modes."
+        ),
+    )
     return p.parse_args()
 
 
@@ -147,7 +163,9 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    eval_job_name = f"matched_long_horizon_eval_iter_{args.iteration:09d}"
+    eval_job_name = (
+        f"matched_long_horizon_eval_{args.rollout_conditioning}_iter_{args.iteration:09d}"
+    )
     overrides = [
         f"job.name={eval_job_name}",
         f"checkpoint.load_path={args.checkpoint}",
@@ -291,7 +309,7 @@ def main() -> None:
             gt_chunks.append(gt_chunk)
 
             model_sample = deepcopy(raw_sample)
-            if current_frame is not None:
+            if args.rollout_conditioning == "autoregressive" and current_frame is not None:
                 raw_h, raw_w = model_sample["video"].shape[-2:]
                 if current_frame.shape[:2] != (raw_h, raw_w):
                     current_frame = resize_video_uint8(current_frame[None], (raw_h, raw_w))[0]
@@ -308,8 +326,14 @@ def main() -> None:
                 )
                 decoded = model.decode(generated["vision"][0])
             generated_content = video_tensor_to_uint8(decoded)
-            # Preserve the decoder's unpadded content frame for the next chunk.
-            current_frame = generated_content[-1].copy()
+            # In autoregressive mode, preserve the decoder's unpadded endpoint
+            # for the next chunk. Teacher-forced mode deliberately keeps
+            # ``current_frame`` unset, so the next raw sample retains its
+            # matched ground-truth first frame while actions/history remain
+            # unchanged. This isolates rollout-state mismatch from action
+            # timing without altering the model or checkpoint.
+            if args.rollout_conditioning == "autoregressive":
+                current_frame = generated_content[-1].copy()
             # A divisibility edge case may make decoded content differ by a few
             # pixels; resize only to the native GT content shape, never to the
             # temporary padded model canvas.
@@ -368,6 +392,12 @@ def main() -> None:
             "dataset executed actions immediately preceding each rollout window"
             if args.num_history_actions
             else None
+        ),
+        "rollout_conditioning": args.rollout_conditioning,
+        "chunk_initial_frame_source": (
+            "previous generated endpoint"
+            if args.rollout_conditioning == "autoregressive"
+            else "matched ground-truth frame at each chunk boundary"
         ),
         "inference_mode": "forward_dynamics",
         "rollout_space": "native unpadded dataset content",
