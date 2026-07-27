@@ -32,6 +32,7 @@ from cosmos_framework.utils.context_managers import distributed_init, model_init
 from cosmos_framework.utils.lazy_config import instantiate
 
 from fds_metrics import compute_frame_decay, resize_video_uint8, video_tensor_to_uint8
+from c3hss_physical_action_interventions import build_physical_axis_variants
 
 
 CHUNK_SIZE = 12
@@ -63,6 +64,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-history-actions", type=int, default=16)
     parser.add_argument("--fps", type=int, default=10)
     parser.add_argument("--motion-roi-quantile", type=float, default=0.85)
+    parser.add_argument(
+        "--variant-set",
+        choices=("normalized_probes", "physical_axes"),
+        default="normalized_probes",
+        help="Use legacy normalized probes or valid physical-space per-axis interventions.",
+    )
+    parser.add_argument(
+        "--stats-filename",
+        default="meta/stats_cosmos-c3hss-v1.json",
+        help="Dataset-relative mean/std file used after the relative-action transform.",
+    )
     return parser.parse_args()
 
 
@@ -223,7 +235,10 @@ def main() -> None:
         raise ValueError("This diagnostic currently encodes the 20-D jhu_dvrk_mono arm layout")
     if args.num_history_actions <= 0:
         raise ValueError("--num-history-actions must be positive for the CAMP-lite diagnostic")
-    if args.start_base_index < max(abs(value) for value in SHIFT_RAW_FRAMES):
+    if (
+        args.variant_set == "normalized_probes"
+        and args.start_base_index < max(abs(value) for value in SHIFT_RAW_FRAMES)
+    ):
         raise ValueError("--start-base-index is too small for the negative temporal interventions")
     if not 0.0 < args.motion_roi_quantile < 1.0:
         raise ValueError("--motion-roi-quantile must be in (0, 1)")
@@ -281,10 +296,13 @@ def main() -> None:
         append_idle_frames=False,
     )
 
+    required_shifts = (
+        (0, *SHIFT_RAW_FRAMES) if args.variant_set == "normalized_probes" else (0,)
+    )
     required = {
         (episode_id, args.start_base_index + shift)
         for episode_id in args.episodes
-        for shift in (0, *SHIFT_RAW_FRAMES)
+        for shift in required_shifts
     }
     index_by_pair = {
         pair: idx for idx, pair in enumerate(base.sub_datasets[0]._all_steps) if tuple(pair) in required
@@ -320,12 +338,19 @@ def main() -> None:
         donor_episode = args.episodes[(episode_index + 1) % len(args.episodes)]
         raw_sample = sample_cache[(episode_id, args.start_base_index)]
         correct_action = raw_sample["action"]
-        donor_action = sample_cache[(donor_episode, args.start_base_index)]["action"]
-        shifted_actions = {
-            shift: sample_cache[(episode_id, args.start_base_index + shift)]["action"]
-            for shift in SHIFT_RAW_FRAMES
-        }
-        variants = build_action_variants(correct_action, donor_action, shifted_actions)
+        physical_variants: OrderedDict[str, np.ndarray] | None = None
+        stats_audit: dict[str, Any] | None = None
+        if args.variant_set == "physical_axes":
+            variants, physical_variants, stats_audit = build_physical_axis_variants(
+                correct_action, Path(args.dataset) / args.stats_filename
+            )
+        else:
+            donor_action = sample_cache[(donor_episode, args.start_base_index)]["action"]
+            shifted_actions = {
+                shift: sample_cache[(episode_id, args.start_base_index + shift)]["action"]
+                for shift in SHIFT_RAW_FRAMES
+            }
+            variants = build_action_variants(correct_action, donor_action, shifted_actions)
         tag = f"{dataset_name}_ep{episode_id:05d}_seed{args.seed}"
         gt = _tensor_video_uint8(raw_sample["video"])
         ground_truth_path = output_dir / f"{tag}_ground_truth.mp4"
@@ -333,9 +358,21 @@ def main() -> None:
         motion_mask = _motion_roi(gt, args.motion_roi_quantile)
         gt_energy = _motion_energy(gt, motion_mask)
         action_archive = output_dir / f"{tag}_normalized_actions.npz"
+        archive_arrays = {
+            (
+                f"normalized__{name}"
+                if args.variant_set == "physical_axes"
+                else name
+            ): value.detach().cpu().numpy()
+            for name, value in variants.items()
+        }
+        if physical_variants is not None:
+            archive_arrays.update(
+                {f"physical__{name}": value for name, value in physical_variants.items()}
+            )
         np.savez_compressed(
             action_archive,
-            **{name: value.detach().cpu().numpy() for name, value in variants.items()},
+            **archive_arrays,
             history_action=raw_sample["history_action"].detach().cpu().numpy(),
             motion_roi=motion_mask,
         )
@@ -405,13 +442,17 @@ def main() -> None:
 
         episode_record = {
             "episode_id": episode_id,
-            "donor_episode_id": donor_episode,
+            "donor_episode_id": (
+                donor_episode if args.variant_set == "normalized_probes" else None
+            ),
             "ground_truth_video": str(ground_truth_path),
             "normalized_actions_archive": str(action_archive),
             "history_action_sha256": _tensor_sha256(raw_sample["history_action"]),
             "motion_roi_fraction": float(motion_mask.mean()),
             "variants": variant_records,
         }
+        if stats_audit is not None:
+            episode_record["physical_action_audit"] = stats_audit
         episode_records.append(episode_record)
         # Persist each completed episode immediately. A later episode or final
         # aggregate failure must never discard already-computed GPU results.
@@ -419,6 +460,7 @@ def main() -> None:
 
     payload = {
         "diagnostic": "paired one-chunk current-action interventions",
+        "variant_set": args.variant_set,
         "model": "C3-H-S-S CAMP-lite H16",
         "checkpoint": args.checkpoint,
         "checkpoint_loader_iteration": int(loaded_iteration),
@@ -438,13 +480,19 @@ def main() -> None:
         ),
         "motion_roi_quantile": args.motion_roi_quantile,
         "normalization_note": (
-            "zero and scale conditions operate after the dataset's relative-action transform "
-            "and mean/std normalization; they are model-space causal probes"
+            "physical-axis conditions invert the dataset-specific mean/std after the "
+            "relative-action transform, edit translation/rotation/jaw in physical space, "
+            "then reapply the same statistics"
+            if args.variant_set == "physical_axes"
+            else "zero and scale conditions operate after the dataset's relative-action "
+            "transform and mean/std normalization; they are model-space causal probes"
         ),
         "temporal_shift_note": (
             "shift conditions borrow the normalized current-action profile from the same "
             "episode at base_index +/-3 or +/-6 raw frames while retaining the target "
             "initial image and executed history"
+            if args.variant_set == "normalized_probes"
+            else None
         ),
         "results": episode_records,
     }
