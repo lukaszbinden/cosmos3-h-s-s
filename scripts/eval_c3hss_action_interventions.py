@@ -14,6 +14,7 @@ from collections import OrderedDict
 from copy import deepcopy
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,24 @@ def _tensor_video_uint8(video: torch.Tensor) -> np.ndarray:
 def _tensor_sha256(value: torch.Tensor) -> str:
     array = value.detach().cpu().contiguous().numpy()
     return hashlib.sha256(array.tobytes()).hexdigest()
+
+
+def _json_safe(value: Any) -> Any:
+    """Replace undefined numeric metrics with JSON ``null`` recursively."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (float, np.floating)):
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else None
+    if isinstance(value, np.integer):
+        return int(value)
+    return value
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(_json_safe(payload), indent=2, allow_nan=False) + "\n")
 
 
 def build_action_variants(
@@ -384,17 +403,19 @@ def main() -> None:
                 correct_generated[1:], generated_content[1:], motion_mask
             )
 
-        episode_records.append(
-            {
-                "episode_id": episode_id,
-                "donor_episode_id": donor_episode,
-                "ground_truth_video": str(ground_truth_path),
-                "normalized_actions_archive": str(action_archive),
-                "history_action_sha256": _tensor_sha256(raw_sample["history_action"]),
-                "motion_roi_fraction": float(motion_mask.mean()),
-                "variants": variant_records,
-            }
-        )
+        episode_record = {
+            "episode_id": episode_id,
+            "donor_episode_id": donor_episode,
+            "ground_truth_video": str(ground_truth_path),
+            "normalized_actions_archive": str(action_archive),
+            "history_action_sha256": _tensor_sha256(raw_sample["history_action"]),
+            "motion_roi_fraction": float(motion_mask.mean()),
+            "variants": variant_records,
+        }
+        episode_records.append(episode_record)
+        # Persist each completed episode immediately. A later episode or final
+        # aggregate failure must never discard already-computed GPU results.
+        _write_json(output_dir / f"{tag}_action_intervention_episode.json", episode_record)
 
     payload = {
         "diagnostic": "paired one-chunk current-action interventions",
@@ -427,9 +448,7 @@ def main() -> None:
         ),
         "results": episode_records,
     }
-    (output_dir / "action_intervention_results.json").write_text(
-        json.dumps(payload, indent=2, allow_nan=False) + "\n"
-    )
+    _write_json(output_dir / "action_intervention_results.json", payload)
 
 
 if __name__ == "__main__":
