@@ -10,30 +10,32 @@ the commanded action window without long-rollout compounding.
 from __future__ import annotations
 
 import argparse
-from collections import OrderedDict
-from copy import deepcopy
 import hashlib
 import json
 import math
+from collections import OrderedDict
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import mediapy
 import numpy as np
 import torch
-
+from c3hss_physical_action_interventions import build_physical_axis_variants
 from cosmos_framework.configs.toml_config.sft_config import load_experiment_from_toml
-from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
+from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import (
+    EmbodimentTag,
+)
 from cosmos_framework.data.vfm.action.open_h_dataset import OpenHMixedLeRobotDataset
 from cosmos_framework.data.vfm.action.transforms import ActionTransformPipeline
-from cosmos_framework.data.vfm.joint_dataloader import PackingDataLoader, custom_collate_fn
+from cosmos_framework.data.vfm.joint_dataloader import (
+    PackingDataLoader,
+    custom_collate_fn,
+)
 from cosmos_framework.utils import distributed, log
 from cosmos_framework.utils.context_managers import distributed_init, model_init
 from cosmos_framework.utils.lazy_config import instantiate
-
 from fds_metrics import compute_frame_decay, resize_video_uint8, video_tensor_to_uint8
-from c3hss_physical_action_interventions import build_physical_axis_variants
-
 
 CHUNK_SIZE = 12
 ACTION_DIM = 20

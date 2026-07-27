@@ -10,15 +10,14 @@ and then restores the exact normalized representation expected by Cosmos.
 
 from __future__ import annotations
 
-from collections import OrderedDict
 import json
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
-
 
 CHUNK_SIZE = 12
 ACTION_DIM = 20
