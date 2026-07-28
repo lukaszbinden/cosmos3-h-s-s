@@ -115,6 +115,7 @@ def main() -> None:
 
     failures: list[str] = []
     observations: list[str] = []
+    ablation_effectiveness: dict[str, dict[str, int]] = {}
     conditions = {
         condition: _load_condition(args.root, condition)
         for condition in args.conditions
@@ -252,6 +253,61 @@ def main() -> None:
             if records["arm_a_h0"]["memory_code_sha256"] is not None:
                 failures.append(f"{identity}: Arm A unexpectedly has memory")
 
+    ablation_pairs = (
+        (
+            "arm_b_history_zero",
+            "arm_b_history_real",
+            "history_action_sha256",
+            True,
+        ),
+        (
+            "arm_b_history_permute",
+            "arm_b_history_real",
+            "history_action_sha256",
+            True,
+        ),
+        ("arm_c_memory_zero", "arm_c_real", "memory_code_sha256", True),
+        ("arm_c_memory_shuffle", "arm_c_real", "memory_code_sha256", False),
+        (
+            "arm_c_history_zero",
+            "arm_c_real",
+            "history_action_sha256",
+            True,
+        ),
+        (
+            "arm_c_history_permute",
+            "arm_c_real",
+            "history_action_sha256",
+            True,
+        ),
+    )
+    for ablated, reference, field, require_every_change in ablation_pairs:
+        if ablated not in conditions or reference not in conditions:
+            continue
+        changed = sum(
+            conditions[ablated][identity][1][field]
+            != conditions[reference][identity][1][field]
+            for identity in common
+        )
+        label = f"{ablated}_vs_{reference}"
+        ablation_effectiveness[label] = {
+            "changed_records": changed,
+            "total_records": len(common),
+        }
+        if require_every_change and changed != len(common):
+            failures.append(
+                f"{label}: only {changed}/{len(common)} tensors actually changed"
+            )
+        elif not require_every_change and changed < len(common):
+            observations.append(
+                f"{label}: {changed}/{len(common)} records changed; repeated "
+                "quantized codes make the remaining shuffled donors identical"
+            )
+        if not require_every_change and changed < len(common) / 2:
+            failures.append(
+                f"{label}: fewer than half of shuffled-memory records changed"
+            )
+
     # Zero-history and zero-memory hashes should each collapse to one constant
     # across all examples; shuffled tensors should retain example variation.
     relational: dict[str, dict[str, int]] = defaultdict(dict)
@@ -286,6 +342,7 @@ def main() -> None:
             for name, records in conditions.items()
         },
         "common_identity_count": len(common),
+        "ablation_effectiveness": ablation_effectiveness,
         "checks_passed": not failures,
         "failures": failures,
         "observations": observations,
