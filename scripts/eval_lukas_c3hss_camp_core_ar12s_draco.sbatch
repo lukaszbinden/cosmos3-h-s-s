@@ -120,7 +120,7 @@ MOUNTS="$MOUNTS,$MEMORY_TRACKS_HOST:$MEMORY_TRACKS_CONTAINER:ro"
 echo "===== MATCHED CAMP AR12 CONDITION $(date -Is) ====="
 echo "condition=$EVAL_CONDITION checkpoint=$CHECKPOINT checkpoint_iter=$CHECKPOINT_ITER"
 echo "history_rows=$NUM_HISTORY_ACTIONS memory_root=${MEMORY_TRACKS_ROOT:-absent}"
-echo "episode=2091 base_index=63 chunks=10 frames=121 fps=10 duration=12.1s"
+echo "episode=2049 base_index=48 chunks=10 frames=121 fps=10 duration=12.1s"
 echo "output_root=$OUTPUT_ROOT"
 
 srun --no-container-mount-home --container-image="$CONTAINER_IMAGE" \
@@ -131,5 +131,5 @@ srun --ntasks=1 --ntasks-per-node=1 \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",EVAL_CONDITION="$EVAL_CONDITION",NUM_HISTORY_ACTIONS="$NUM_HISTORY_ACTIONS",MEMORY_TRACKS_ROOT="$MEMORY_TRACKS_ROOT",OUTPUT_ROOT="$OUTPUT_ROOT",DATASET="$DATASET",COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1 \
+    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",EVAL_CONDITION="$EVAL_CONDITION",NUM_HISTORY_ACTIONS="$NUM_HISTORY_ACTIONS",MEMORY_TRACKS_ROOT="$MEMORY_TRACKS_ROOT",OUTPUT_ROOT="$OUTPUT_ROOT",DATASET="$DATASET",EVAL_EPISODE=2049,START_BASE_INDEX=48,COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1 \
     bash /eval/run_lukas_c3hss_camp_core_ar12s_draco.sh

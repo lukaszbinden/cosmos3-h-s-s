@@ -11,6 +11,8 @@ set -euo pipefail
 : "${DATASET:?launcher must provide the held-out dataset leaf}"
 
 MEMORY_TRACKS_ROOT=${MEMORY_TRACKS_ROOT:-}
+EVAL_EPISODE=${EVAL_EPISODE:-2049}
+START_BASE_INDEX=${START_BASE_INDEX:-48}
 CONDITION_ROOT="$OUTPUT_ROOT/$EVAL_CONDITION"
 RUNTIME_ROOT="$CONDITION_ROOT/runtime"
 RAW_ROOT="$CONDITION_ROOT/raw"
@@ -51,12 +53,12 @@ torchrun --standalone --nnodes=1 --nproc-per-node=1 \
     --checkpoint="$CHECKPOINT" \
     --dataset="$DATASET" \
     --output-dir="$RAW_ROOT" \
-    --episodes 2091 \
+    --episodes "$EVAL_EPISODE" \
     --embodiment=jhu_dvrk_mono \
     --data-split=full \
     --test-split-ratio=0.05 \
     --timestep-interval=3 \
-    --start-base-index=63 \
+    --start-base-index="$START_BASE_INDEX" \
     --iteration="$CHECKPOINT_ITER" \
     --max-chunks=10 \
     --seed=0 \
