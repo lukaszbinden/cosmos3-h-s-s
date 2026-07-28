@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
-#SBATCH --mem=220G
+#SBATCH --mem=160G
 #SBATCH --time=02:00:00
 #SBATCH --job-name=c3hss-dvrk-training-coupling-audit
 #SBATCH --output=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/users/shuver/outputs/c3hss_dvrk_training_coupling_audit/slurm_%j.out
