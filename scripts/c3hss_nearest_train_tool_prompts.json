@@ -1,0 +1,81 @@
+{
+  "reference_size": [480, 272],
+  "objects": ["entry_left", "entry_right"],
+  "episodes": {
+    "hf_suturebot:135:339": {
+      "entry_left": {
+        "box": [45, 150, 205, 225],
+        "positive_points": [[90, 190], [145, 178], [170, 202]],
+        "negative_points": [[135, 155], [195, 220]]
+      },
+      "entry_right": {
+        "box": [215, 190, 315, 272],
+        "positive_points": [[240, 235], [270, 220], [290, 250]],
+        "negative_points": [[220, 195], [310, 265]]
+      }
+    },
+    "hf_suturebot:138:300": {
+      "entry_left": {
+        "box": [30, 150, 205, 225],
+        "positive_points": [[65, 190], [120, 195], [175, 190]],
+        "negative_points": [[190, 155], [45, 220]]
+      },
+      "entry_right": {
+        "box": [195, 125, 395, 235],
+        "positive_points": [[225, 160], [300, 180], [355, 205]],
+        "negative_points": [[205, 220], [385, 135]]
+      }
+    },
+    "hf_suturebot:141:216": {
+      "entry_left": {
+        "box": [25, 160, 215, 235],
+        "positive_points": [[60, 200], [120, 200], [180, 195]],
+        "negative_points": [[205, 165], [30, 230]]
+      },
+      "entry_right": {
+        "box": [285, 0, 440, 105],
+        "positive_points": [[325, 70], [365, 45], [405, 35]],
+        "negative_points": [[295, 15], [435, 90]]
+      }
+    },
+    "hf_suturebot:215:261": {
+      "entry_left": {
+        "box": [100, 185, 220, 250],
+        "positive_points": [[125, 220], [165, 220], [200, 220]],
+        "negative_points": [[105, 245], [210, 190]],
+        "manual_polygon": [[100, 195], [220, 195], [220, 238], [100, 242]]
+      },
+      "entry_right": {
+        "box": [210, 105, 410, 225],
+        "positive_points": [[240, 140], [315, 150], [370, 175]],
+        "negative_points": [[220, 215], [400, 115]]
+      }
+    },
+    "hf_suturebot:674:372": {
+      "entry_left": {
+        "box": [95, 165, 230, 230],
+        "positive_points": [[120, 200], [165, 205], [205, 195]],
+        "negative_points": [[100, 170], [225, 225]],
+        "manual_polygon": [[95, 178], [230, 175], [230, 218], [95, 225]]
+      },
+      "entry_right": {
+        "box": [240, 145, 435, 272],
+        "positive_points": [[270, 225], [335, 210], [390, 195]],
+        "negative_points": [[250, 155], [425, 265]]
+      }
+    },
+    "hf_suturebot:882:207": {
+      "entry_left": {
+        "box": [90, 145, 220, 220],
+        "positive_points": [[115, 185], [160, 190], [200, 185]],
+        "negative_points": [[95, 150], [215, 215]],
+        "manual_polygon": [[90, 165], [220, 160], [220, 205], [90, 212]]
+      },
+      "entry_right": {
+        "box": [210, 70, 400, 200],
+        "positive_points": [[240, 105], [305, 115], [355, 135]],
+        "negative_points": [[220, 190], [390, 80]]
+      }
+    }
+  }
+}

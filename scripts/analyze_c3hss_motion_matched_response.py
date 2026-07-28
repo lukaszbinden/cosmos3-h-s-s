@@ -501,7 +501,10 @@ def main() -> None:
 
     aggregate_groups = []
     for subset in sorted({row["subset"] for row in variant_rows}):
-        for target_arm in ARMS:
+        present_arms = {
+            row["target_arm"] for row in variant_rows if row["subset"] == subset
+        }
+        for target_arm in (arm for arm in ARMS if arm in present_arms):
             group = [
                 row
                 for row in variant_rows
@@ -573,6 +576,12 @@ def main() -> None:
             }
         )
 
+    subsets = sorted({item["subset"] for item in aggregate_groups})
+    arms = [
+        arm
+        for arm in ARMS
+        if any(item["target_arm"] == arm for item in aggregate_groups)
+    ]
     response_matrix = np.asarray(
         [
             [
@@ -581,18 +590,23 @@ def main() -> None:
                     for item in aggregate_groups
                     if item["subset"] == subset and item["target_arm"] == arm
                 )
-                for arm in ARMS
+                for arm in arms
             ]
-            for subset in ("hf_suturebot", "nephfat")
+            for subset in subsets
         ]
     )
-    figure, axis = plt.subplots(figsize=(6.5, 4.5))
+    figure, axis = plt.subplots(
+        figsize=(max(4.5, 2.6 * len(arms)), max(3.5, 1.8 * len(subsets)))
+    )
     image = axis.imshow(response_matrix, cmap="viridis", vmin=0.0, vmax=1.0)
-    axis.set_xticks(range(2), ["PSM1-active", "PSM2-active"])
-    axis.set_yticks(range(2), ["HF SutureBot", "NephFat"])
+    axis.set_xticks(range(len(arms)), [f"{arm.upper()}-active" for arm in arms])
+    axis.set_yticks(
+        range(len(subsets)),
+        [subset.replace("_", " ").title() for subset in subsets],
+    )
     axis.set_title("Intended-tool response fraction")
-    for row_index in range(2):
-        for column_index in range(2):
+    for row_index in range(len(subsets)):
+        for column_index in range(len(arms)):
             axis.text(
                 column_index,
                 row_index,
