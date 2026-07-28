@@ -80,6 +80,16 @@ def _window_means(
     return {identity: float(np.mean(values)) for identity, values in grouped.items()}
 
 
+def _select(
+    records: dict[tuple, dict[str, float]], subset: str, target: str
+) -> dict[tuple, dict[str, float]]:
+    return {
+        identity: values
+        for identity, values in records.items()
+        if identity[0] == subset and identity[1] == target
+    }
+
+
 def _summary(values: list[float]) -> dict[str, float]:
     array = np.asarray(values, dtype=np.float64)
     return {
@@ -119,10 +129,29 @@ def main() -> None:
 
     metrics = tuple(next(iter(next(iter(loaded.values())).values())).keys())
     condition_summaries: dict[str, Any] = {}
+    strata = sorted({identity[:2] for identity in expected})
     for condition, records in loaded.items():
         condition_summaries[condition] = {
-            metric: _summary([record[metric] for record in records.values()])
-            for metric in metrics
+            "overall": {
+                metric: _summary([record[metric] for record in records.values()])
+                for metric in metrics
+            },
+            "strata": [
+                {
+                    "subset": subset,
+                    "target_arm": target,
+                    "metrics": {
+                        metric: _summary(
+                            [
+                                record[metric]
+                                for record in _select(records, subset, target).values()
+                            ]
+                        )
+                        for metric in metrics
+                    },
+                }
+                for subset, target in strata
+            ],
         }
 
     comparisons = []
@@ -156,12 +185,47 @@ def main() -> None:
                     else "lower_is_better"
                 ),
             }
+        stratum_deltas = []
+        for subset, target in strata:
+            candidate_records = _select(loaded[candidate], subset, target)
+            reference_records = _select(loaded[reference], subset, target)
+            stratum_metrics = {}
+            for metric in metrics:
+                candidate_windows = _window_means(candidate_records, metric)
+                reference_windows = _window_means(reference_records, metric)
+                identities = sorted(candidate_windows)
+                deltas = np.asarray(
+                    [
+                        candidate_windows[identity] - reference_windows[identity]
+                        for identity in identities
+                    ],
+                    dtype=np.float64,
+                )
+                stratum_metrics[metric] = {
+                    "candidate_minus_reference_mean": float(deltas.mean()),
+                    "candidate_better_window_count": int(
+                        np.sum(
+                            deltas > 0
+                            if metric in {"mean_ssim", "action_response_sensitivity"}
+                            else deltas < 0
+                        )
+                    ),
+                    "window_count": len(deltas),
+                }
+            stratum_deltas.append(
+                {
+                    "subset": subset,
+                    "target_arm": target,
+                    "metrics": stratum_metrics,
+                }
+            )
         comparisons.append(
             {
                 "label": label,
                 "candidate": candidate,
                 "reference": reference,
                 "metrics": metric_deltas,
+                "strata": stratum_deltas,
             }
         )
 
