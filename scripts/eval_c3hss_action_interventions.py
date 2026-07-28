@@ -49,7 +49,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--episodes", type=int, nargs="+", required=True)
+    parser.add_argument("--episodes", type=int, nargs="+")
+    parser.add_argument(
+        "--episode-windows",
+        nargs="+",
+        help=(
+            "Explicit episode:base_index pairs. This is mutually exclusive "
+            "with --episodes/--start-base-index."
+        ),
+    )
     parser.add_argument(
         "--embodiment",
         choices=sorted(tag.value for tag in EmbodimentTag),
@@ -76,6 +84,22 @@ def parse_args() -> argparse.Namespace:
         "--stats-filename",
         default="meta/stats_cosmos-c3hss-v1.json",
         help="Dataset-relative mean/std file used after the relative-action transform.",
+    )
+    parser.add_argument(
+        "--physical-anchor-mode",
+        choices=("reference", "first_row"),
+        default="reference",
+        help=(
+            "Scale physical pose components around the conditioning reference "
+            "(legacy) or the first model-facing row (motion-only diagnostic)."
+        ),
+    )
+    parser.add_argument(
+        "--physical-intervention-arms",
+        nargs="+",
+        choices=("psm1", "psm2"),
+        default=["psm1", "psm2"],
+        help="Generate physical-axis variants only for these robot arms.",
     )
     return parser.parse_args()
 
@@ -237,6 +261,34 @@ def main() -> None:
         raise ValueError("This diagnostic currently encodes the 20-D jhu_dvrk_mono arm layout")
     if args.num_history_actions <= 0:
         raise ValueError("--num-history-actions must be positive for the CAMP-lite diagnostic")
+    if bool(args.episodes) == bool(args.episode_windows):
+        raise ValueError(
+            "Provide exactly one of --episodes or --episode-windows"
+        )
+    if args.episode_windows:
+        if args.variant_set != "physical_axes":
+            raise ValueError(
+                "--episode-windows currently requires --variant-set=physical_axes"
+            )
+        requested_windows = []
+        for value in args.episode_windows:
+            try:
+                episode_text, base_text = value.split(":", maxsplit=1)
+                requested_windows.append((int(episode_text), int(base_text)))
+            except ValueError as error:
+                raise ValueError(
+                    f"Invalid --episode-windows value {value!r}; expected episode:base"
+                ) from error
+    else:
+        requested_windows = [
+            (episode_id, args.start_base_index)
+            for episode_id in args.episodes
+        ]
+    if len({episode_id for episode_id, _ in requested_windows}) != len(
+        requested_windows
+    ):
+        raise ValueError("Each requested window must use a distinct episode")
+    episode_ids = [episode_id for episode_id, _ in requested_windows]
     if (
         args.variant_set == "normalized_probes"
         and args.start_base_index < max(abs(value) for value in SHIFT_RAW_FRAMES)
@@ -302,8 +354,8 @@ def main() -> None:
         (0, *SHIFT_RAW_FRAMES) if args.variant_set == "normalized_probes" else (0,)
     )
     required = {
-        (episode_id, args.start_base_index + shift)
-        for episode_id in args.episodes
+        (episode_id, base_index + shift)
+        for episode_id, base_index in requested_windows
         for shift in required_shifts
     }
     index_by_pair = {
@@ -336,24 +388,45 @@ def main() -> None:
 
     torch.set_grad_enabled(False)
     episode_records = []
-    for episode_index, episode_id in enumerate(args.episodes):
-        donor_episode = args.episodes[(episode_index + 1) % len(args.episodes)]
-        raw_sample = sample_cache[(episode_id, args.start_base_index)]
+    for episode_index, (episode_id, base_index) in enumerate(requested_windows):
+        donor_episode = episode_ids[(episode_index + 1) % len(episode_ids)]
+        raw_sample = sample_cache[(episode_id, base_index)]
         correct_action = raw_sample["action"]
         physical_variants: OrderedDict[str, np.ndarray] | None = None
         stats_audit: dict[str, Any] | None = None
         if args.variant_set == "physical_axes":
             variants, physical_variants, stats_audit = build_physical_axis_variants(
-                correct_action, Path(args.dataset) / args.stats_filename
+                correct_action,
+                Path(args.dataset) / args.stats_filename,
+                anchor_mode=args.physical_anchor_mode,
             )
+            selected_arms = set(args.physical_intervention_arms)
+            variants = OrderedDict(
+                (name, value)
+                for name, value in variants.items()
+                if name == "correct"
+                or any(name.startswith(f"{arm}_") for arm in selected_arms)
+            )
+            physical_variants = OrderedDict(
+                (name, value)
+                for name, value in physical_variants.items()
+                if name == "correct"
+                or any(name.startswith(f"{arm}_") for arm in selected_arms)
+            )
+            stats_audit["evaluated_intervention_arms"] = sorted(selected_arms)
+            stats_audit["evaluated_variant_count"] = len(variants)
         else:
-            donor_action = sample_cache[(donor_episode, args.start_base_index)]["action"]
+            donor_action = sample_cache[(donor_episode, base_index)]["action"]
             shifted_actions = {
-                shift: sample_cache[(episode_id, args.start_base_index + shift)]["action"]
+                shift: sample_cache[(episode_id, base_index + shift)]["action"]
                 for shift in SHIFT_RAW_FRAMES
             }
             variants = build_action_variants(correct_action, donor_action, shifted_actions)
-        tag = f"{dataset_name}_ep{episode_id:05d}_seed{args.seed}"
+        tag = (
+            f"{dataset_name}_ep{episode_id:05d}_base{base_index:05d}_seed{args.seed}"
+            if args.episode_windows
+            else f"{dataset_name}_ep{episode_id:05d}_seed{args.seed}"
+        )
         gt = _tensor_video_uint8(raw_sample["video"])
         ground_truth_path = output_dir / f"{tag}_ground_truth.mp4"
         mediapy.write_video(ground_truth_path, gt, fps=args.fps)
@@ -444,6 +517,7 @@ def main() -> None:
 
         episode_record = {
             "episode_id": episode_id,
+            "base_index": base_index,
             "donor_episode_id": (
                 donor_episode if args.variant_set == "normalized_probes" else None
             ),
@@ -469,8 +543,14 @@ def main() -> None:
         "dataset": args.dataset,
         "dataset_name": dataset_name,
         "embodiment": args.embodiment,
-        "episodes": args.episodes,
-        "start_base_index": args.start_base_index,
+        "episodes": episode_ids,
+        "episode_windows": [
+            {"episode_id": episode_id, "base_index": base_index}
+            for episode_id, base_index in requested_windows
+        ],
+        "start_base_index": (
+            None if args.episode_windows else args.start_base_index
+        ),
         "timestep_interval": args.timestep_interval,
         "chunk_size": CHUNK_SIZE,
         "num_history_actions": args.num_history_actions,
@@ -482,12 +562,23 @@ def main() -> None:
         ),
         "motion_roi_quantile": args.motion_roi_quantile,
         "normalization_note": (
-            "physical-axis conditions invert the dataset-specific mean/std after the "
-            "relative-action transform, edit translation/rotation/jaw in physical space, "
-            "then reapply the same statistics"
+            "physical-axis conditions invert the dataset-specific mean/std after "
+            "the relative-action transform, edit translation/rotation/jaw in "
+            f"physical space around the {args.physical_anchor_mode} anchor, then "
+            "reapply the same statistics"
             if args.variant_set == "physical_axes"
             else "zero and scale conditions operate after the dataset's relative-action "
             "transform and mean/std normalization; they are model-space causal probes"
+        ),
+        "physical_anchor_mode": (
+            args.physical_anchor_mode
+            if args.variant_set == "physical_axes"
+            else None
+        ),
+        "physical_intervention_arms": (
+            args.physical_intervention_arms
+            if args.variant_set == "physical_axes"
+            else None
         ),
         "temporal_shift_note": (
             "shift conditions borrow the normalized current-action profile from the same "

@@ -30,6 +30,7 @@ ACTION_KEYS = (
 )
 AXES = ("x", "y", "z")
 GAINS = ((0.0, "0x"), (1.5, "1p5x"))
+ANCHOR_MODES = ("reference", "first_row")
 
 
 def load_action_stats(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
@@ -107,15 +108,26 @@ def _validate_rotation_matrices(matrices: np.ndarray) -> None:
 
 
 def _scaled_axis_rotation(
-    physical: np.ndarray, arm_offset: int, axis: int, gain: float
+    physical: np.ndarray,
+    arm_offset: int,
+    axis: int,
+    gain: float,
+    anchor_mode: str,
 ) -> np.ndarray:
     result = physical.copy()
     rotation_slice = slice(arm_offset + 3, arm_offset + 9)
     matrices = rotation_6d_to_matrix(result[:, rotation_slice])
-    rotation_vectors = Rotation.from_matrix(matrices).as_rotvec()
+    if anchor_mode == "first_row":
+        anchor = matrices[0]
+        delta_matrices = np.einsum("ij,tjk->tik", anchor.T, matrices)
+        rotation_vectors = Rotation.from_matrix(delta_matrices).as_rotvec()
+    else:
+        anchor = np.eye(3, dtype=np.float64)
+        rotation_vectors = Rotation.from_matrix(matrices).as_rotvec()
     rotation_vectors[:, axis] *= gain
+    scaled_delta = Rotation.from_rotvec(rotation_vectors).as_matrix()
     result[:, rotation_slice] = matrix_to_rotation_6d(
-        Rotation.from_rotvec(rotation_vectors).as_matrix()
+        np.einsum("ij,tjk->tik", anchor, scaled_delta)
     )
     return result
 
@@ -123,6 +135,7 @@ def _scaled_axis_rotation(
 def build_physical_axis_variants(
     correct: torch.Tensor,
     stats_path: str | Path,
+    anchor_mode: str = "reference",
 ) -> tuple[
     OrderedDict[str, torch.Tensor],
     OrderedDict[str, np.ndarray],
@@ -130,12 +143,16 @@ def build_physical_axis_variants(
 ]:
     """Build correct plus 0x/1.5x interventions for 14 physical components.
 
-    Translation is relative displacement in metres. Rotation is converted to
-    an axis-angle vector, one component is scaled, and the result is projected
-    back to a valid rotation matrix. Jaw commands are absolute in the dataset,
-    so their *motion from the first command* is scaled while the first command
-    itself remains fixed.
+    With ``anchor_mode="reference"`` (legacy behavior), translation and
+    rotation are scaled around the conditioning-state origin. With
+    ``anchor_mode="first_row"``, each trajectory is scaled around its first
+    model-facing row, preserving the initial command-state offset and changing
+    only subsequent motion. Jaw motion is always scaled around its first row.
     """
+    if anchor_mode not in ANCHOR_MODES:
+        raise ValueError(
+            f"anchor_mode must be one of {ANCHOR_MODES}, got {anchor_mode!r}"
+        )
     if tuple(correct.shape) != (CHUNK_SIZE, ACTION_DIM):
         raise ValueError(
             f"correct action has shape {tuple(correct.shape)}, "
@@ -170,14 +187,27 @@ def build_physical_axis_variants(
         for axis_index, axis_name in enumerate(AXES):
             for gain, gain_name in GAINS:
                 variant = correct_physical.copy()
-                variant[:, arm_offset + axis_index] *= gain
+                axis_values = variant[:, arm_offset + axis_index]
+                if anchor_mode == "first_row":
+                    anchor = axis_values[0]
+                    variant[:, arm_offset + axis_index] = anchor + gain * (
+                        axis_values - anchor
+                    )
+                else:
+                    variant[:, arm_offset + axis_index] *= gain
                 add(f"{arm_name}_t{axis_name}_{gain_name}", variant)
 
         for axis_index, axis_name in enumerate(AXES):
             for gain, gain_name in GAINS:
                 add(
                     f"{arm_name}_r{axis_name}_{gain_name}",
-                    _scaled_axis_rotation(correct_physical, arm_offset, axis_index, gain),
+                    _scaled_axis_rotation(
+                        correct_physical,
+                        arm_offset,
+                        axis_index,
+                        gain,
+                        anchor_mode,
+                    ),
                 )
 
         jaw_index = arm_offset + 9
@@ -191,6 +221,15 @@ def build_physical_axis_variants(
 
     if len(normalized_variants) != 29:
         raise AssertionError(f"expected 29 variants, built {len(normalized_variants)}")
+    first_row_max_abs_error = max(
+        float(np.max(np.abs(value[0] - correct_physical[0])))
+        for value in physical_variants.values()
+    )
+    if anchor_mode == "first_row" and first_row_max_abs_error > 1e-6:
+        raise ValueError(
+            "first-row anchoring failed: "
+            f"maximum first-row error={first_row_max_abs_error:.3e}"
+        )
 
     audit = {
         "stats_path": str(Path(stats_path)),
@@ -198,12 +237,13 @@ def build_physical_axis_variants(
         "mean": means.tolist(),
         "std": stds.tolist(),
         "normalized_physical_roundtrip_max_abs_error": roundtrip_max_abs_error,
+        "anchor_mode": anchor_mode,
+        "variant_first_row_max_abs_error": first_row_max_abs_error,
         "rotation_parameterization": (
-            "relative SO(3) matrix -> axis-angle; selected rotvec component scaled; "
-            "converted back to first-two-rows rot6d"
+            "relative SO(3) matrix -> anchor-local axis-angle; selected rotvec "
+            "component scaled; converted back to first-two-rows rot6d"
         ),
         "jaw_parameterization": "absolute command motion around the first command",
         "variant_count": len(normalized_variants),
     }
     return normalized_variants, physical_variants, audit
-
