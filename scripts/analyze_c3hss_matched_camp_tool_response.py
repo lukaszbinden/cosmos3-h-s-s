@@ -154,6 +154,7 @@ def _analyze_manifest(
     manifest_path: Path,
     condition_root: Path,
     masks_root: Path,
+    reference_hashes: dict[str, str],
     dilation: int,
 ) -> tuple[tuple, dict[str, float]]:
     manifest = json.loads(manifest_path.read_text())
@@ -167,6 +168,13 @@ def _analyze_manifest(
     other_tool = next(name for name in OBJECTS if name != intended_tool)
 
     mask_path = masks_root / (f"{subset}_{target}_ep{episode:05d}_base{base:05d}.npz")
+    expected_gt_hash = reference_hashes.get(mask_path.name)
+    if expected_gt_hash is None:
+        raise KeyError(f"No reference provenance for {mask_path.name}")
+    if manifest["ground_truth_frames_sha256"] != expected_gt_hash:
+        raise ValueError(
+            f"{identity}: ground-truth hash does not match the reviewed mask source"
+        )
     with np.load(mask_path) as archive:
         masks = {name: archive[f"gt__{name}"].astype(bool) for name in OBJECTS}
     rois = _exclusive_tool_rois(masks, dilation)
@@ -255,6 +263,12 @@ def main() -> None:
     parser.add_argument("--expected-manifests-per-condition", type=int, default=60)
     args = parser.parse_args()
 
+    provenance_path = args.reference_gt_masks_dir / "REFERENCE_PROVENANCE.json"
+    provenance = json.loads(provenance_path.read_text())
+    reference_hashes = {
+        record["mask_file"]: record["ground_truth_frames_sha256"]
+        for record in provenance["records"]
+    }
     loaded: dict[str, dict[tuple, dict[str, float]]] = {}
     for condition in args.conditions:
         condition_root = args.root / condition
@@ -269,7 +283,11 @@ def main() -> None:
         condition_records = {}
         for path in manifests:
             identity, metrics = _analyze_manifest(
-                path, condition_root, args.reference_gt_masks_dir, args.roi_dilation
+                path,
+                condition_root,
+                args.reference_gt_masks_dir,
+                reference_hashes,
+                args.roi_dilation,
             )
             condition_records[identity] = metrics
         loaded[condition] = condition_records
@@ -336,6 +354,7 @@ def main() -> None:
         "comparison_step": 950,
         "roi_dilation_pixels": args.roi_dilation,
         "reference_gt_masks_dir": str(args.reference_gt_masks_dir.resolve()),
+        "reference_mask_provenance": str(provenance_path.resolve()),
         "records_per_condition": len(identities),
         "independent_window_clusters": len({identity[:-1] for identity in identities}),
         "condition_summaries": condition_summaries,

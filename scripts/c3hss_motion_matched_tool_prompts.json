@@ -6,12 +6,14 @@
       "entry_left": {
         "box": [0, 75, 235, 220],
         "positive_points": [[45, 145], [115, 160], [185, 158]],
-        "negative_points": [[270, 145], [390, 145]]
+        "negative_points": [[270, 145], [390, 145]],
+        "manual_polygon": [[20, 140], [190, 140], [190, 155], [25, 155]]
       },
       "entry_right": {
         "box": [205, 65, 480, 210],
         "positive_points": [[435, 135], [345, 150], [245, 158]],
-        "negative_points": [[120, 160]]
+        "negative_points": [[120, 160]],
+        "manual_polygon": [[205, 140], [280, 120], [285, 135], [210, 155]]
       }
     },
     "hf_suturebot:1401:246": {
