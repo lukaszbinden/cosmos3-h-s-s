@@ -27,6 +27,7 @@ import csv
 import hashlib
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +219,28 @@ def _video_path(
     return root / relative
 
 
+def _read_parquet_with_retry(
+    path: Path, columns: list[str], attempts: int = 4
+) -> tuple[Any, int]:
+    """Read one parquet file without Arrow's dataset-level path discovery.
+
+    Concurrent Lustre metadata lookups can occasionally surface a transient
+    FileNotFoundError even when the file exists.  ParquetFile opens the exact
+    file, and the bounded retry keeps a real missing-file failure visible.
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return pq.ParquetFile(str(path)).read(columns=columns), attempt
+        except (FileNotFoundError, OSError) as error:
+            last_error = error
+            if attempt < attempts:
+                time.sleep(0.25 * attempt)
+    raise RuntimeError(
+        f"could not read {path} after {attempts} attempts; exists={path.exists()}"
+    ) from last_error
+
+
 def _safe_corr(left: np.ndarray, right: np.ndarray) -> float:
     left = np.asarray(left, dtype=np.float64)
     right = np.asarray(right, dtype=np.float64)
@@ -346,9 +369,9 @@ def _episode_worker(payload: dict[str, Any]) -> dict[str, Any]:
     base_step = int(payload["base_step"])
     extra_bases = set(payload["extra_bases"])
     parquet_path = _episode_path(root, info, episode_id)
-    table = pq.read_table(
+    table, parquet_read_attempts = _read_parquet_with_retry(
         parquet_path,
-        columns=[
+        [
             "action",
             "observation.state",
             "timestamp",
@@ -525,6 +548,7 @@ def _episode_worker(payload: dict[str, Any]) -> dict[str, Any]:
         "window_rows": windows,
         "step_arrays": step_arrays,
         "video_audit": video_audit,
+        "parquet_read_attempts": parquet_read_attempts,
         "parquet_sha256": _sha256(parquet_path),
     }
 
@@ -716,6 +740,7 @@ def main() -> None:
                 "task_index": result["task_index"],
                 "task": task_names.get(result["task_index"], "unknown"),
                 "raw_rows": result["raw_rows"],
+                "parquet_read_attempts": result["parquet_read_attempts"],
                 "parquet_sha256": result["parquet_sha256"],
                 "video": result["video_audit"],
             }

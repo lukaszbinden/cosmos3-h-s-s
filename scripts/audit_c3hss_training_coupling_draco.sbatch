@@ -23,6 +23,8 @@ OUTPUT_ROOT=${OUTPUT_ROOT:-$SHUVER_ROOT/outputs/c3hss_dvrk_training_coupling_aud
 HF_ROOT=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H-lz/Surgical/JHU/Imerse/previously_collected_data/hf_suturebot
 NEPH_ROOT=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H/Surgical/JHU/Imerse/NephFat_extracted/nephfat
 WORKERS_PER_DATASET=${WORKERS_PER_DATASET:-24}
+RUN_HF=${RUN_HF:-1}
+RUN_NEPH=${RUN_NEPH:-1}
 
 for required in \
     "$FRAMEWORK_DIR/.venv/bin/activate" \
@@ -44,13 +46,15 @@ MOUNTS="$MOUNTS,$JOB_SCRIPTS:/eval"
 echo "===== C3-H-S-S FULL TRAINING COUPLING AUDIT $(date -Is) ====="
 echo "output_root=$OUTPUT_ROOT"
 echo "workers_per_dataset=$WORKERS_PER_DATASET"
+echo "run_hf=$RUN_HF"
+echo "run_neph=$RUN_NEPH"
 
 srun --ntasks=1 --ntasks-per-node=1 \
     --no-container-mount-home \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,OUTPUT_ROOT="$OUTPUT_ROOT",HF_ROOT="$HF_ROOT",NEPH_ROOT="$NEPH_ROOT",WORKERS_PER_DATASET="$WORKERS_PER_DATASET" \
+    --export=ALL,OUTPUT_ROOT="$OUTPUT_ROOT",HF_ROOT="$HF_ROOT",NEPH_ROOT="$NEPH_ROOT",WORKERS_PER_DATASET="$WORKERS_PER_DATASET",RUN_HF="$RUN_HF",RUN_NEPH="$RUN_NEPH" \
     bash -lc '
         set -euo pipefail
         source /workspace/.venv/bin/activate
@@ -59,28 +63,36 @@ srun --ntasks=1 --ntasks-per-node=1 \
         export PYTHONPATH=/eval
         mkdir -p "$HOME"
 
-        python /eval/scan_c3hss_training_coupling.py \
-            --dataset-root "$HF_ROOT" \
-            --output-dir "$OUTPUT_ROOT/hf_suturebot" \
-            --subset-name hf_suturebot \
-            --split train \
-            --extra-window 1382:381 \
-            --workers "$WORKERS_PER_DATASET" \
-            > "$OUTPUT_ROOT/hf_suturebot/scan.log" 2>&1 &
-        hf_pid=$!
-
-        python /eval/scan_c3hss_training_coupling.py \
-            --dataset-root "$NEPH_ROOT" \
-            --output-dir "$OUTPUT_ROOT/nephfat" \
-            --subset-name nephfat \
-            --split train \
-            --workers "$WORKERS_PER_DATASET" \
-            > "$OUTPUT_ROOT/nephfat/scan.log" 2>&1 &
-        neph_pid=$!
-
+        pids=()
+        if [[ "$RUN_HF" == "1" ]]; then
+            python /eval/scan_c3hss_training_coupling.py \
+                --dataset-root "$HF_ROOT" \
+                --output-dir "$OUTPUT_ROOT/hf_suturebot" \
+                --subset-name hf_suturebot \
+                --split train \
+                --extra-window 1382:381 \
+                --workers "$WORKERS_PER_DATASET" \
+                > "$OUTPUT_ROOT/hf_suturebot/scan.log" 2>&1 &
+            pids+=("$!")
+        fi
+        if [[ "$RUN_NEPH" == "1" ]]; then
+            python /eval/scan_c3hss_training_coupling.py \
+                --dataset-root "$NEPH_ROOT" \
+                --output-dir "$OUTPUT_ROOT/nephfat" \
+                --subset-name nephfat \
+                --split train \
+                --workers "$WORKERS_PER_DATASET" \
+                > "$OUTPUT_ROOT/nephfat/scan.log" 2>&1 &
+            pids+=("$!")
+        fi
+        if [[ "${#pids[@]}" -eq 0 ]]; then
+            echo "FATAL: RUN_HF and RUN_NEPH are both disabled"
+            exit 64
+        fi
         status=0
-        wait "$hf_pid" || status=1
-        wait "$neph_pid" || status=1
+        for pid in "${pids[@]}"; do
+            wait "$pid" || status=1
+        done
         if [[ "$status" -ne 0 ]]; then
             echo "FATAL: at least one dataset scan failed"
             tail -80 "$OUTPUT_ROOT/hf_suturebot/scan.log" || true
