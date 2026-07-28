@@ -241,7 +241,9 @@ def main() -> None:
             "Full-frame and motion-ROI fidelity measure correct-prediction quality. "
             "Action-response sensitivity measures output change under counterfactual "
             "commands, not whether the intended tool moved; use the shared-mask SAM "
-            "analysis for tool-localized causality."
+            "analysis for tool-localized causality. Arm B and Arm C are compute-matched "
+            "at 950 CAMP fine-tuning steps. Arm A is their pre-CAMP parent checkpoint, "
+            "so Arm-A/Arm-B deltas also include those 950 adaptation steps."
         ),
     }
     output = args.output or args.root / "matched_grid_metric_summary.json"

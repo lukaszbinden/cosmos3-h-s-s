@@ -341,6 +341,11 @@ def main() -> None:
         "condition_summaries": condition_summaries,
         "paired_comparisons": comparisons,
         "interpretation": {
+            "training_match": (
+                "Arm B and Arm C are compute-matched at 950 CAMP fine-tuning steps. "
+                "Arm A is their pre-CAMP parent checkpoint, so Arm-A/Arm-B deltas "
+                "also include those 950 adaptation steps."
+            ),
             "intended_response_fraction": (
                 ">0.5 means the counterfactual action changes the commanded tool ROI "
                 "more than the other tool ROI"
