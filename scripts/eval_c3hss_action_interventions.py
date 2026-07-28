@@ -24,6 +24,12 @@ import numpy as np
 import torch
 from c3hss_physical_action_interventions import build_physical_axis_variants
 from cosmos_framework.configs.toml_config.sft_config import load_experiment_from_toml
+from cosmos_framework.data.vfm.action.camp_memory_tracks import (
+    CampMemoryTrackJoiner,
+)
+from cosmos_framework.data.vfm.action.camp_transforms import (
+    CampActionTransformPipeline,
+)
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import (
     EmbodimentTag,
 )
@@ -84,6 +90,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--guidance", type=float, default=1.5)
     parser.add_argument("--num-sampling-step", type=int, default=16)
     parser.add_argument("--num-history-actions", type=int, default=16)
+    parser.add_argument(
+        "--history-ablation",
+        choices=("zero", "permute"),
+        default=None,
+    )
+    parser.add_argument(
+        "--camp-memory-tracks-root",
+        default=None,
+        help="Exported CAMP memory-track root. Omit for arms A/B.",
+    )
+    parser.add_argument(
+        "--camp-memory-ablation",
+        choices=("zero", "shuffle_episode"),
+        default=None,
+    )
+    parser.add_argument("--eval-condition", default="unspecified")
+    parser.add_argument("--model-label", default="C3-H-S-S")
+    parser.add_argument(
+        "--comparison-step",
+        type=int,
+        default=None,
+        help="Matched fine-tuning step shared by the comparison grid.",
+    )
     parser.add_argument("--fps", type=int, default=10)
     parser.add_argument("--motion-roi-quantile", type=float, default=0.85)
     parser.add_argument(
@@ -292,10 +321,12 @@ def main() -> None:
         raise ValueError(
             "This diagnostic currently encodes the 20-D jhu_dvrk_mono arm layout"
         )
-    if args.num_history_actions <= 0:
-        raise ValueError(
-            "--num-history-actions must be positive for the CAMP-lite diagnostic"
-        )
+    if args.num_history_actions < 0:
+        raise ValueError("--num-history-actions must be non-negative")
+    if args.history_ablation is not None and args.num_history_actions == 0:
+        raise ValueError("--history-ablation requires --num-history-actions > 0")
+    if args.camp_memory_ablation is not None and args.camp_memory_tracks_root is None:
+        raise ValueError("--camp-memory-ablation requires --camp-memory-tracks-root")
     if bool(args.episodes) == bool(args.episode_windows):
         raise ValueError("Provide exactly one of --episodes or --episode-windows")
     if args.episode_windows:
@@ -374,8 +405,22 @@ def main() -> None:
         mode="forward_dynamics",
         viewpoint="third_person_view",
         num_history_actions=args.num_history_actions,
+        history_ablation=args.history_ablation,
+        emit_step_ids=args.camp_memory_tracks_root is not None,
     )
-    transform = ActionTransformPipeline(
+    dataset = base
+    if args.camp_memory_tracks_root is not None:
+        dataset = CampMemoryTrackJoiner(
+            base,
+            tracks_root=args.camp_memory_tracks_root,
+            memory_ablation=args.camp_memory_ablation,
+        )
+    transform_cls = (
+        CampActionTransformPipeline
+        if args.camp_memory_tracks_root is not None
+        else ActionTransformPipeline
+    )
+    transform = transform_cls(
         tokenizer_config=config.model.config.vlm_config.tokenizer,
         cfg_dropout_rate=0.0,
         keep_aspect_ratio=True,
@@ -409,17 +454,28 @@ def main() -> None:
     # Fetch and validate every action source before paying the checkpoint load.
     sample_cache: dict[tuple[int, int], dict[str, Any]] = {}
     for pair, index in index_by_pair.items():
-        sample = base[index]
+        sample = dataset[index]
         if tuple(sample["action"].shape) != (CHUNK_SIZE, ACTION_DIM):
             raise RuntimeError(
                 f"{pair} emitted action shape {tuple(sample['action'].shape)}"
             )
         history = sample.get("history_action")
-        if (
-            not isinstance(history, torch.Tensor)
-            or history.shape[0] != args.num_history_actions
-        ):
-            raise RuntimeError(f"{pair} emitted invalid history_action")
+        if args.num_history_actions:
+            if (
+                not isinstance(history, torch.Tensor)
+                or history.shape[0] != args.num_history_actions
+            ):
+                raise RuntimeError(f"{pair} emitted invalid history_action")
+        elif history is not None:
+            raise RuntimeError(f"{pair} unexpectedly emitted history_action")
+        memory_code = sample.get("memory_code")
+        if args.camp_memory_tracks_root is not None:
+            if not isinstance(memory_code, torch.Tensor) or tuple(
+                memory_code.shape
+            ) != (132,):
+                raise RuntimeError(f"{pair} emitted invalid memory_code")
+        elif memory_code is not None:
+            raise RuntimeError(f"{pair} unexpectedly emitted memory_code")
         sample_cache[pair] = sample
 
     trainer = config.trainer.type(config)
@@ -501,6 +557,12 @@ def main() -> None:
             ): value.detach().cpu().numpy()
             for name, value in variants.items()
         }
+        history_action = raw_sample.get("history_action")
+        memory_code = raw_sample.get("memory_code")
+        if isinstance(history_action, torch.Tensor):
+            archive_arrays["history_action"] = history_action.detach().cpu().numpy()
+        if isinstance(memory_code, torch.Tensor):
+            archive_arrays["memory_code"] = memory_code.detach().cpu().numpy()
         if physical_variants is not None:
             archive_arrays.update(
                 {
@@ -511,16 +573,29 @@ def main() -> None:
         np.savez_compressed(
             action_archive,
             **archive_arrays,
-            history_action=raw_sample["history_action"].detach().cpu().numpy(),
             motion_roi=motion_mask,
         )
 
         generated_by_variant: dict[str, np.ndarray] = {}
         variant_records = []
+        conditioning_audit: dict[str, Any] | None = None
         for variant_name, action in variants.items():
             model_sample = deepcopy(raw_sample)
             model_sample["action"] = action.clone()
             transformed = transform(model_sample, config.model.config.resolution)
+            if variant_name == "correct":
+                transformed_action = transformed["action"]
+                memory_rows_value = transformed.get("num_memory_action_rows")
+                conditioning_audit = {
+                    "model_action_shape": list(transformed_action.shape),
+                    "model_action_sha256": _tensor_sha256(transformed_action),
+                    "num_memory_action_rows": (
+                        int(memory_rows_value.item())
+                        if isinstance(memory_rows_value, torch.Tensor)
+                        else 0
+                    ),
+                    "sequence_plan": repr(transformed.get("sequence_plan")),
+                }
             data_batch = _pack_one(transformed, dataset_name)
             with torch.inference_mode():
                 generated = model.generate_samples_from_batch(
@@ -593,7 +668,23 @@ def main() -> None:
                 np.ascontiguousarray(gt).tobytes()
             ).hexdigest(),
             "normalized_actions_archive": str(action_archive),
-            "history_action_sha256": _tensor_sha256(raw_sample["history_action"]),
+            "current_action_sha256": _tensor_sha256(correct_action),
+            "history_action_sha256": (
+                _tensor_sha256(history_action)
+                if isinstance(history_action, torch.Tensor)
+                else None
+            ),
+            "memory_code_sha256": (
+                _tensor_sha256(memory_code)
+                if isinstance(memory_code, torch.Tensor)
+                else None
+            ),
+            "conditioning_audit": conditioning_audit,
+            "model": args.model_label,
+            "checkpoint": args.checkpoint,
+            "checkpoint_requested_iteration": args.iteration,
+            "comparison_step": args.comparison_step,
+            "eval_condition": args.eval_condition,
             "motion_roi_fraction": float(motion_mask.mean()),
             "variants": variant_records,
         }
@@ -609,7 +700,9 @@ def main() -> None:
     payload = {
         "diagnostic": "paired one-chunk current-action interventions",
         "variant_set": args.variant_set,
-        "model": "C3-H-S-S CAMP-lite H16",
+        "model": args.model_label,
+        "eval_condition": args.eval_condition,
+        "comparison_step": args.comparison_step,
         "checkpoint": args.checkpoint,
         "checkpoint_loader_iteration": int(loaded_iteration),
         "dataset": args.dataset,
@@ -624,6 +717,9 @@ def main() -> None:
         "timestep_interval": args.timestep_interval,
         "chunk_size": CHUNK_SIZE,
         "num_history_actions": args.num_history_actions,
+        "history_ablation": args.history_ablation,
+        "camp_memory_tracks_root": args.camp_memory_tracks_root,
+        "camp_memory_ablation": args.camp_memory_ablation,
         "seed": args.seed,
         "data_seed": args.data_seed,
         "guidance": args.guidance,
