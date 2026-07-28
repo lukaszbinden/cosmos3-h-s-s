@@ -19,6 +19,8 @@ import numpy as np
 import torch
 
 from cosmos_framework.configs.toml_config.sft_config import load_experiment_from_toml
+from cosmos_framework.data.vfm.action.camp_memory_tracks import CampMemoryTrackJoiner
+from cosmos_framework.data.vfm.action.camp_transforms import CampActionTransformPipeline
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
 from cosmos_framework.data.vfm.action.open_h_dataset import OpenHMixedLeRobotDataset
 from cosmos_framework.data.vfm.action.transforms import ActionTransformPipeline
@@ -87,6 +89,23 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--history-ablation",
+        choices=("zero", "permute"),
+        default=None,
+        help="Optional raw-history null intervention. Requires history actions.",
+    )
+    p.add_argument(
+        "--camp-memory-tracks-root",
+        default=None,
+        help="Exported CAMP memory-track root. Omit for arms A/B.",
+    )
+    p.add_argument(
+        "--camp-memory-ablation",
+        choices=("zero", "shuffle_episode"),
+        default=None,
+        help="Optional learned-memory null intervention. Requires memory tracks.",
+    )
+    p.add_argument(
         "--score-size",
         type=int,
         nargs=2,
@@ -149,6 +168,10 @@ def main() -> None:
     args = parse_args()
     if args.num_history_actions < 0:
         raise ValueError("--num-history-actions must be non-negative")
+    if args.history_ablation is not None and args.num_history_actions == 0:
+        raise ValueError("--history-ablation requires --num-history-actions > 0")
+    if args.camp_memory_ablation is not None and args.camp_memory_tracks_root is None:
+        raise ValueError("--camp-memory-ablation requires --camp-memory-tracks-root")
     if args.timestep_interval <= 0:
         raise ValueError("--timestep-interval must be positive")
     if args.start_base_index < 0:
@@ -196,8 +219,22 @@ def main() -> None:
         mode="forward_dynamics",
         viewpoint="third_person_view",
         num_history_actions=args.num_history_actions,
+        history_ablation=args.history_ablation,
+        emit_step_ids=args.camp_memory_tracks_root is not None,
     )
-    transform = ActionTransformPipeline(
+    dataset = base
+    if args.camp_memory_tracks_root is not None:
+        dataset = CampMemoryTrackJoiner(
+            base,
+            tracks_root=args.camp_memory_tracks_root,
+            memory_ablation=args.camp_memory_ablation,
+        )
+    transform_cls = (
+        CampActionTransformPipeline
+        if args.camp_memory_tracks_root is not None
+        else ActionTransformPipeline
+    )
+    transform = transform_cls(
         tokenizer_config=config.model.config.vlm_config.tokenizer,
         cfg_dropout_rate=0.0,
         keep_aspect_ratio=True,
@@ -287,7 +324,7 @@ def main() -> None:
             # padding again.  Feeding a decoded frame back *after stretching it to
             # the padded canvas* makes the next encode crop its upper-left content
             # region, causing a progressive zoom/shift at every chunk boundary.
-            raw_sample = base[index_by_pair[(episode_id, base_index)]]
+            raw_sample = dataset[index_by_pair[(episode_id, base_index)]]
             if args.num_history_actions:
                 history_action = raw_sample.get("history_action")
                 if not isinstance(history_action, torch.Tensor):
@@ -301,6 +338,20 @@ def main() -> None:
                         f"history length: {history_action.shape[0]} != "
                         f"{args.num_history_actions}"
                     )
+            memory_code = raw_sample.get("memory_code")
+            if args.camp_memory_tracks_root is not None:
+                if not isinstance(memory_code, torch.Tensor) or tuple(
+                    memory_code.shape
+                ) != (132,):
+                    raise RuntimeError(
+                        "CAMP memory evaluation requested exported tracks, but the "
+                        f"sample emitted memory_code={type(memory_code).__name__} "
+                        f"shape={getattr(memory_code, 'shape', None)}"
+                    )
+            elif memory_code is not None:
+                raise RuntimeError(
+                    "Non-memory rollout unexpectedly emitted a memory_code"
+                )
             # Work at the dataset's native preprocessed content size (for
             # example, 832x480 CMR or 960x544 JHU dVRK), matching each
             # embodiment's training pipeline. Any common-grid resizing happens
@@ -387,12 +438,16 @@ def main() -> None:
         "seed": args.seed,
         "guidance": args.guidance,
         "num_sampling_step": args.num_sampling_step,
+        "fps": args.fps,
         "num_history_actions": args.num_history_actions,
+        "history_ablation": args.history_ablation,
         "history_source": (
             "dataset executed actions immediately preceding each rollout window"
             if args.num_history_actions
             else None
         ),
+        "camp_memory_tracks_root": args.camp_memory_tracks_root,
+        "camp_memory_ablation": args.camp_memory_ablation,
         "rollout_conditioning": args.rollout_conditioning,
         "chunk_initial_frame_source": (
             "previous generated endpoint"
