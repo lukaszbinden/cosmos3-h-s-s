@@ -40,6 +40,7 @@ done
 
 mkdir -p "$OUTPUT_ROOT/hf_suturebot" "$OUTPUT_ROOT/nephfat"
 MOUNTS="/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan:/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan"
+MOUNTS="$MOUNTS,/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan:/lustre/fsw/portfolios/healthcareeng/projects/healthcareeng_holoscan"
 MOUNTS="$MOUNTS,$FRAMEWORK_DIR:/workspace"
 MOUNTS="$MOUNTS,$JOB_SCRIPTS:/eval"
 
