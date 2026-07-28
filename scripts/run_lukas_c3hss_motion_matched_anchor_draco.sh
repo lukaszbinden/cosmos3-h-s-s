@@ -45,6 +45,9 @@ run_group() {
     (
         export CUDA_VISIBLE_DEVICES=$gpu
         export IMAGINAIRE_OUTPUT_ROOT=$runtime
+        # Episode IDs are exclusively from meta/info.json's official test split.
+        # Cosmos data_split=test instead re-samples 5% of individual steps, so
+        # use full only to make those pinned episode/base pairs addressable.
         torchrun --standalone --nnodes=1 --nproc-per-node=1 \
             /eval/eval_c3hss_action_interventions.py \
             --sft-toml=/cookbook/toml/sft_config/action_mixed_open_h_sft_nano.toml \
@@ -53,7 +56,7 @@ run_group() {
             --output-dir="$out" \
             --episode-windows "$@" \
             --embodiment=jhu_dvrk_mono \
-            --data-split=test \
+            --data-split=full \
             --test-split-ratio=0.05 \
             --timestep-interval=3 \
             --iteration "$CHECKPOINT_ITER" \
