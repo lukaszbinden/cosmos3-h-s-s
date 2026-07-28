@@ -19,13 +19,15 @@ FRAMEWORK_DIR=$LUKAS_WORKSPACE/packages/cosmos3
 COOKBOOK_DIR=$LUKAS_WORKSPACE/cookbooks/cosmos3/generator/action/finetune
 SHUVER_ROOT=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/users/shuver
 JOB_SCRIPTS=$SHUVER_ROOT/eval_jobs
-OUTPUT_ROOT=$SHUVER_ROOT/outputs/c3hss_camp_arm_b_iter700_dvrk_motion_matched_anchor
+CHECKPOINT_ITER=${CHECKPOINT_ITER:-700}
+OUTPUT_ROOT=${OUTPUT_ROOT:-$SHUVER_ROOT/outputs/c3hss_camp_arm_b_iter700_dvrk_motion_matched_anchor}
 DVRK_OPENH_ROOT=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H/Surgical
 DVRK_LZ_ROOT=/lustre/fs11/portfolios/healthcareeng/projects/healthcareeng_holoscan/datasets/Open-H-lz
 CONTAINER_IMAGE=$LUKAS_ROOT/images/cosmos3.sqsh
 DRACO_NVML_PATH=$LUKAS_ROOT/images/nvidia-pinned
-CHECKPOINT_ITER=700
-CHECKPOINT=$LUKAS_ROOT/imaginaire/output/cosmos3_action_surgical/action_open_h_camp/camp-arm-b-h16-iter_000015000/checkpoints/iter_000000700
+CHECKPOINT=${CHECKPOINT:-$LUKAS_ROOT/imaginaire/output/cosmos3_action_surgical/action_open_h_camp/camp-arm-b-h16-iter_000015000/checkpoints/iter_$(printf '%09d' "$CHECKPOINT_ITER")}
+SEEDS=${SEEDS:-0}
+PHYSICAL_COMPONENTS=${PHYSICAL_COMPONENTS:-"tx ty tz rx ry rz jaw"}
 
 source "$LUKAS_WORKSPACE/env.sh"
 
@@ -83,6 +85,8 @@ echo "checkpoint=$CHECKPOINT"
 echo "checkpoint_iter=$CHECKPOINT_ITER"
 echo "selection=3 unique episodes per arm per dataset, target 0.65 mm/step"
 echo "anchor_mode=first_row"
+echo "seeds=$SEEDS"
+echo "physical_components=$PHYSICAL_COMPONENTS"
 echo "output_root=$OUTPUT_ROOT"
 
 srun --no-container-mount-home --container-image="$CONTAINER_IMAGE" \
@@ -93,5 +97,5 @@ srun --ntasks=1 --ntasks-per-node=1 \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",OUTPUT_ROOT="$OUTPUT_ROOT",DVRK_OPENH_ROOT="$DVRK_OPENH_ROOT",DVRK_LZ_ROOT="$DVRK_LZ_ROOT",COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1,COSMOS_OPENH_NUM_HISTORY_ACTIONS=16 \
+    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",OUTPUT_ROOT="$OUTPUT_ROOT",DVRK_OPENH_ROOT="$DVRK_OPENH_ROOT",DVRK_LZ_ROOT="$DVRK_LZ_ROOT",SEEDS="$SEEDS",PHYSICAL_COMPONENTS="$PHYSICAL_COMPONENTS",COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1,COSMOS_OPENH_NUM_HISTORY_ACTIONS=16 \
     bash /eval/run_lukas_c3hss_motion_matched_anchor_draco.sh

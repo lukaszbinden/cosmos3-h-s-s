@@ -63,7 +63,9 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(tag.value for tag in EmbodimentTag),
         default=EmbodimentTag.JHU_DVRK_MONO.value,
     )
-    parser.add_argument("--data-split", choices=("train", "test", "full"), default="test")
+    parser.add_argument(
+        "--data-split", choices=("train", "test", "full"), default="test"
+    )
     parser.add_argument("--test-split-ratio", type=float, default=0.05)
     parser.add_argument("--timestep-interval", type=int, default=3)
     parser.add_argument("--start-base-index", type=int, default=48)
@@ -101,6 +103,13 @@ def parse_args() -> argparse.Namespace:
         default=["psm1", "psm2"],
         help="Generate physical-axis variants only for these robot arms.",
     )
+    parser.add_argument(
+        "--physical-intervention-components",
+        nargs="+",
+        choices=("tx", "ty", "tz", "rx", "ry", "rz", "jaw"),
+        default=["tx", "ty", "tz", "rx", "ry", "rz", "jaw"],
+        help="Generate physical-axis variants only for these components.",
+    )
     return parser.parse_args()
 
 
@@ -113,7 +122,9 @@ def _memory_format(value: Any) -> torch.memory_format:
 
 
 def _pack_one(sample: dict[str, Any], dataset_name: str) -> dict[str, Any]:
-    loader = torch.utils.data.DataLoader([sample], batch_size=1, collate_fn=custom_collate_fn)
+    loader = torch.utils.data.DataLoader(
+        [sample], batch_size=1, collate_fn=custom_collate_fn
+    )
     packed = PackingDataLoader(
         dataloader=loader,
         tokenizer_spatial_compression_factor=16,
@@ -166,10 +177,16 @@ def build_action_variants(
     conditioning probes, not claims of a physically exact dVRK no-op.
     """
     expected_shape = (CHUNK_SIZE, ACTION_DIM)
-    sources = {"correct": correct, "donor": donor, **{f"shift_{k}": v for k, v in shifted.items()}}
+    sources = {
+        "correct": correct,
+        "donor": donor,
+        **{f"shift_{k}": v for k, v in shifted.items()},
+    }
     for name, value in sources.items():
         if tuple(value.shape) != expected_shape:
-            raise ValueError(f"{name} action has shape {tuple(value.shape)}, expected {expected_shape}")
+            raise ValueError(
+                f"{name} action has shape {tuple(value.shape)}, expected {expected_shape}"
+            )
 
     variants: OrderedDict[str, torch.Tensor] = OrderedDict()
     variants["correct"] = correct.clone()
@@ -189,7 +206,9 @@ def build_action_variants(
 
 def _motion_roi(gt: np.ndarray, quantile: float) -> np.ndarray:
     """Ground-truth motion support used for instrument-sensitive image metrics."""
-    frame_delta = np.abs(gt[1:].astype(np.float32) - gt[:-1].astype(np.float32)).mean(axis=-1)
+    frame_delta = np.abs(gt[1:].astype(np.float32) - gt[:-1].astype(np.float32)).mean(
+        axis=-1
+    )
     score = frame_delta.max(axis=0)
     positive = score[score > 0]
     if positive.size == 0:
@@ -208,7 +227,9 @@ def _masked_l1(gt: np.ndarray, generated: np.ndarray, mask: np.ndarray) -> float
 
 
 def _motion_energy(video: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    difference = np.abs(video[1:].astype(np.float32) - video[:-1].astype(np.float32)) / 255.0
+    difference = (
+        np.abs(video[1:].astype(np.float32) - video[:-1].astype(np.float32)) / 255.0
+    )
     return difference[:, mask, :].mean(axis=(1, 2))
 
 
@@ -258,13 +279,15 @@ def _action_summary(action: torch.Tensor, correct: torch.Tensor) -> dict[str, An
 def main() -> None:
     args = parse_args()
     if args.embodiment != EmbodimentTag.JHU_DVRK_MONO.value:
-        raise ValueError("This diagnostic currently encodes the 20-D jhu_dvrk_mono arm layout")
-    if args.num_history_actions <= 0:
-        raise ValueError("--num-history-actions must be positive for the CAMP-lite diagnostic")
-    if bool(args.episodes) == bool(args.episode_windows):
         raise ValueError(
-            "Provide exactly one of --episodes or --episode-windows"
+            "This diagnostic currently encodes the 20-D jhu_dvrk_mono arm layout"
         )
+    if args.num_history_actions <= 0:
+        raise ValueError(
+            "--num-history-actions must be positive for the CAMP-lite diagnostic"
+        )
+    if bool(args.episodes) == bool(args.episode_windows):
+        raise ValueError("Provide exactly one of --episodes or --episode-windows")
     if args.episode_windows:
         if args.variant_set != "physical_axes":
             raise ValueError(
@@ -281,19 +304,19 @@ def main() -> None:
                 ) from error
     else:
         requested_windows = [
-            (episode_id, args.start_base_index)
-            for episode_id in args.episodes
+            (episode_id, args.start_base_index) for episode_id in args.episodes
         ]
     if len({episode_id for episode_id, _ in requested_windows}) != len(
         requested_windows
     ):
         raise ValueError("Each requested window must use a distinct episode")
     episode_ids = [episode_id for episode_id, _ in requested_windows]
-    if (
-        args.variant_set == "normalized_probes"
-        and args.start_base_index < max(abs(value) for value in SHIFT_RAW_FRAMES)
+    if args.variant_set == "normalized_probes" and args.start_base_index < max(
+        abs(value) for value in SHIFT_RAW_FRAMES
     ):
-        raise ValueError("--start-base-index is too small for the negative temporal interventions")
+        raise ValueError(
+            "--start-base-index is too small for the negative temporal interventions"
+        )
     if not 0.0 < args.motion_roi_quantile < 1.0:
         raise ValueError("--motion-roi-quantile must be in (0, 1)")
 
@@ -327,7 +350,9 @@ def main() -> None:
     config.freeze()
 
     base = OpenHMixedLeRobotDataset(
-        dataset_specs=[{"path": args.dataset, "embodiment": args.embodiment, "mix_ratio": 1.0}],
+        dataset_specs=[
+            {"path": args.dataset, "embodiment": args.embodiment, "mix_ratio": 1.0}
+        ],
         num_frames=13,
         data_split=args.data_split,
         test_split_ratio=args.test_split_ratio,
@@ -359,7 +384,9 @@ def main() -> None:
         for shift in required_shifts
     }
     index_by_pair = {
-        pair: idx for idx, pair in enumerate(base.sub_datasets[0]._all_steps) if tuple(pair) in required
+        pair: idx
+        for idx, pair in enumerate(base.sub_datasets[0]._all_steps)
+        if tuple(pair) in required
     }
     missing = sorted(required - set(index_by_pair))
     if missing:
@@ -370,9 +397,14 @@ def main() -> None:
     for pair, index in index_by_pair.items():
         sample = base[index]
         if tuple(sample["action"].shape) != (CHUNK_SIZE, ACTION_DIM):
-            raise RuntimeError(f"{pair} emitted action shape {tuple(sample['action'].shape)}")
+            raise RuntimeError(
+                f"{pair} emitted action shape {tuple(sample['action'].shape)}"
+            )
         history = sample.get("history_action")
-        if not isinstance(history, torch.Tensor) or history.shape[0] != args.num_history_actions:
+        if (
+            not isinstance(history, torch.Tensor)
+            or history.shape[0] != args.num_history_actions
+        ):
             raise RuntimeError(f"{pair} emitted invalid history_action")
         sample_cache[pair] = sample
 
@@ -383,8 +415,12 @@ def main() -> None:
     model = model.to("cuda", memory_format=mem_fmt)
     model.on_train_start(mem_fmt)
     model.eval()
-    loaded_iteration = trainer.checkpointer.load(model, optimizer=None, scheduler=None, grad_scaler=None)
-    log.info(f"Loaded action-intervention checkpoint; loader iteration={loaded_iteration}")
+    loaded_iteration = trainer.checkpointer.load(
+        model, optimizer=None, scheduler=None, grad_scaler=None
+    )
+    log.info(
+        f"Loaded action-intervention checkpoint; loader iteration={loaded_iteration}"
+    )
 
     torch.set_grad_enabled(False)
     episode_records = []
@@ -401,19 +437,29 @@ def main() -> None:
                 anchor_mode=args.physical_anchor_mode,
             )
             selected_arms = set(args.physical_intervention_arms)
+            selected_components = set(args.physical_intervention_components)
             variants = OrderedDict(
                 (name, value)
                 for name, value in variants.items()
                 if name == "correct"
-                or any(name.startswith(f"{arm}_") for arm in selected_arms)
+                or (
+                    any(name.startswith(f"{arm}_") for arm in selected_arms)
+                    and name.split("_")[1] in selected_components
+                )
             )
             physical_variants = OrderedDict(
                 (name, value)
                 for name, value in physical_variants.items()
                 if name == "correct"
-                or any(name.startswith(f"{arm}_") for arm in selected_arms)
+                or (
+                    any(name.startswith(f"{arm}_") for arm in selected_arms)
+                    and name.split("_")[1] in selected_components
+                )
             )
             stats_audit["evaluated_intervention_arms"] = sorted(selected_arms)
+            stats_audit["evaluated_intervention_components"] = sorted(
+                selected_components
+            )
             stats_audit["evaluated_variant_count"] = len(variants)
         else:
             donor_action = sample_cache[(donor_episode, base_index)]["action"]
@@ -421,7 +467,9 @@ def main() -> None:
                 shift: sample_cache[(episode_id, base_index + shift)]["action"]
                 for shift in SHIFT_RAW_FRAMES
             }
-            variants = build_action_variants(correct_action, donor_action, shifted_actions)
+            variants = build_action_variants(
+                correct_action, donor_action, shifted_actions
+            )
         tag = (
             f"{dataset_name}_ep{episode_id:05d}_base{base_index:05d}_seed{args.seed}"
             if args.episode_windows
@@ -435,15 +483,16 @@ def main() -> None:
         action_archive = output_dir / f"{tag}_normalized_actions.npz"
         archive_arrays = {
             (
-                f"normalized__{name}"
-                if args.variant_set == "physical_axes"
-                else name
+                f"normalized__{name}" if args.variant_set == "physical_axes" else name
             ): value.detach().cpu().numpy()
             for name, value in variants.items()
         }
         if physical_variants is not None:
             archive_arrays.update(
-                {f"physical__{name}": value for name, value in physical_variants.items()}
+                {
+                    f"physical__{name}": value
+                    for name, value in physical_variants.items()
+                }
             )
         np.savez_compressed(
             action_archive,
@@ -485,7 +534,9 @@ def main() -> None:
                     "generated_video": str(generated_path),
                     "action": _action_summary(action, correct_action),
                     "fds": fds,
-                    "motion_roi_l1": _masked_l1(gt[1:], generated_content[1:], motion_mask),
+                    "motion_roi_l1": _masked_l1(
+                        gt[1:], generated_content[1:], motion_mask
+                    ),
                     "motion_roi_endpoint_l1": _masked_l1(
                         gt[-1:], generated_content[-1:], motion_mask
                     ),
@@ -532,7 +583,9 @@ def main() -> None:
         episode_records.append(episode_record)
         # Persist each completed episode immediately. A later episode or final
         # aggregate failure must never discard already-computed GPU results.
-        _write_json(output_dir / f"{tag}_action_intervention_episode.json", episode_record)
+        _write_json(
+            output_dir / f"{tag}_action_intervention_episode.json", episode_record
+        )
 
     payload = {
         "diagnostic": "paired one-chunk current-action interventions",
@@ -548,9 +601,7 @@ def main() -> None:
             {"episode_id": episode_id, "base_index": base_index}
             for episode_id, base_index in requested_windows
         ],
-        "start_base_index": (
-            None if args.episode_windows else args.start_base_index
-        ),
+        "start_base_index": (None if args.episode_windows else args.start_base_index),
         "timestep_interval": args.timestep_interval,
         "chunk_size": CHUNK_SIZE,
         "num_history_actions": args.num_history_actions,
@@ -571,12 +622,15 @@ def main() -> None:
             "transform and mean/std normalization; they are model-space causal probes"
         ),
         "physical_anchor_mode": (
-            args.physical_anchor_mode
-            if args.variant_set == "physical_axes"
-            else None
+            args.physical_anchor_mode if args.variant_set == "physical_axes" else None
         ),
         "physical_intervention_arms": (
             args.physical_intervention_arms
+            if args.variant_set == "physical_axes"
+            else None
+        ),
+        "physical_intervention_components": (
+            args.physical_intervention_components
             if args.variant_set == "physical_axes"
             else None
         ),

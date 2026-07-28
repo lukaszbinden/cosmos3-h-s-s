@@ -9,6 +9,10 @@ set -euo pipefail
 : "${DVRK_OPENH_ROOT:?launcher must provide the DRACO Open-H root}"
 : "${DVRK_LZ_ROOT:?launcher must provide the Lucas Open-H-lz root}"
 
+SEEDS=${SEEDS:-0}
+PHYSICAL_COMPONENTS=${PHYSICAL_COMPONENTS:-"tx ty tz rx ry rz jaw"}
+read -r -a physical_components <<<"$PHYSICAL_COMPONENTS"
+
 RUNTIME_ROOT="$OUTPUT_ROOT/runtime"
 mkdir -p "$OUTPUT_ROOT" "$RUNTIME_ROOT"
 
@@ -48,26 +52,31 @@ run_group() {
         # Episode IDs are exclusively from meta/info.json's official test split.
         # Cosmos data_split=test instead re-samples 5% of individual steps, so
         # use full only to make those pinned episode/base pairs addressable.
-        torchrun --standalone --nnodes=1 --nproc-per-node=1 \
-            /eval/eval_c3hss_action_interventions.py \
-            --sft-toml=/cookbook/toml/sft_config/action_mixed_open_h_sft_nano.toml \
-            --checkpoint="$CHECKPOINT" \
-            --dataset="$dataset" \
-            --output-dir="$out" \
-            --episode-windows "$@" \
-            --embodiment=jhu_dvrk_mono \
-            --data-split=full \
-            --test-split-ratio=0.05 \
-            --timestep-interval=3 \
-            --iteration "$CHECKPOINT_ITER" \
-            --seed 0 \
-            --guidance 1.5 \
-            --num-sampling-step 16 \
-            --num-history-actions 16 \
-            --fps 10 \
-            --variant-set=physical_axes \
-            --physical-anchor-mode=first_row \
-            --physical-intervention-arms="$target_arm"
+        for seed in $SEEDS; do
+            echo "SEED_START subset=$subset target=$target_arm seed=$seed time=$(date -Is)"
+            torchrun --standalone --nnodes=1 --nproc-per-node=1 \
+                /eval/eval_c3hss_action_interventions.py \
+                --sft-toml=/cookbook/toml/sft_config/action_mixed_open_h_sft_nano.toml \
+                --checkpoint="$CHECKPOINT" \
+                --dataset="$dataset" \
+                --output-dir="$out" \
+                --episode-windows "$@" \
+                --embodiment=jhu_dvrk_mono \
+                --data-split=full \
+                --test-split-ratio=0.05 \
+                --timestep-interval=3 \
+                --iteration "$CHECKPOINT_ITER" \
+                --seed "$seed" \
+                --guidance 1.5 \
+                --num-sampling-step 16 \
+                --num-history-actions 16 \
+                --fps 10 \
+                --variant-set=physical_axes \
+                --physical-anchor-mode=first_row \
+                --physical-intervention-arms="$target_arm" \
+                --physical-intervention-components "${physical_components[@]}"
+            echo "SEED_DONE subset=$subset target=$target_arm seed=$seed time=$(date -Is)"
+        done
     ) >"$log" 2>&1
     echo "DONE subset=$subset target=$target_arm gpu=$gpu time=$(date -Is)"
 }

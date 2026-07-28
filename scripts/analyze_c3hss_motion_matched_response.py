@@ -40,7 +40,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="mps")
     parser.add_argument("--roi-dilation", type=int, default=24)
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--iteration", type=int, default=700)
     parser.add_argument("--reuse-masks", action="store_true")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Analyze only manifests generated with this diffusion seed.",
+    )
     return parser.parse_args()
 
 
@@ -99,9 +106,13 @@ def _resolve_video(
     episode_id: int,
     base_index: int,
     suffix: str,
+    seed: int | None,
 ) -> Path:
+    seed_pattern = "*" if seed is None else str(seed)
     matches = list(
-        directory.glob(f"*ep{episode_id:05d}_base{base_index:05d}_seed*_{suffix}.mp4")
+        directory.glob(
+            f"*ep{episode_id:05d}_base{base_index:05d}_seed{seed_pattern}_{suffix}.mp4"
+        )
     )
     if len(matches) != 1:
         raise RuntimeError(
@@ -124,8 +135,13 @@ def main() -> None:
     manifests = sorted(
         (input_root / "raw").glob("*/*/*_action_intervention_episode.json")
     )
+    if args.seed is not None:
+        manifests = [path for path in manifests if f"_seed{args.seed}_" in path.name]
     if len(manifests) != 12:
-        raise RuntimeError(f"Expected 12 episode manifests, found {len(manifests)}")
+        raise RuntimeError(
+            f"Expected 12 episode manifests for seed {args.seed}, "
+            f"found {len(manifests)}"
+        )
 
     manifest_records = []
     for manifest_path in manifests:
@@ -166,6 +182,7 @@ def main() -> None:
                     episode_id,
                     base_index,
                     "ground_truth",
+                    args.seed,
                 )
             )
             prompt_key = f"{subset}:{episode_id}:{base_index}"
@@ -202,6 +219,7 @@ def main() -> None:
                     episode_id,
                     base_index,
                     "ground_truth",
+                    args.seed,
                 )
             )
             correct = tools._read_video(
@@ -210,6 +228,7 @@ def main() -> None:
                     episode_id,
                     base_index,
                     "correct",
+                    args.seed,
                 )
             )
             initial = initial_by_identity[identity]
@@ -251,6 +270,7 @@ def main() -> None:
                 episode_id,
                 base_index,
                 "ground_truth",
+                args.seed,
             )
         )
         correct = tools._read_video(
@@ -259,6 +279,7 @@ def main() -> None:
                 episode_id,
                 base_index,
                 "correct",
+                args.seed,
             )
         )
         with np.load(mask_paths[identity]) as archive:
@@ -301,7 +322,8 @@ def main() -> None:
 
         action_matches = list(
             manifest_path.parent.glob(
-                f"*ep{episode_id:05d}_base{base_index:05d}_seed*_normalized_actions.npz"
+                f"*ep{episode_id:05d}_base{base_index:05d}_seed"
+                f"{'*' if args.seed is None else args.seed}_normalized_actions.npz"
             )
         )
         if len(action_matches) != 1:
@@ -329,6 +351,7 @@ def main() -> None:
                     episode_id,
                     base_index,
                     variant_name,
+                    args.seed,
                 )
             )
             generated_flow = tools._flow(generated)
@@ -340,6 +363,7 @@ def main() -> None:
                 "target_arm": target_arm,
                 "episode_id": episode_id,
                 "base_index": base_index,
+                "seed": args.seed,
                 "variant": variant_name,
                 "component": match.group(2),
                 "gain": match.group(3),
@@ -385,6 +409,7 @@ def main() -> None:
                 "target_arm": target_arm,
                 "episode_id": episode_id,
                 "base_index": base_index,
+                "seed": args.seed,
                 "intended_tool": intended_tool,
                 "correct_tool_metrics": correct_tool_metrics,
                 "ground_truth_tool_motion": {
@@ -550,7 +575,9 @@ def main() -> None:
 
     payload = {
         "diagnostic": ("motion-matched first-row-anchored per-tool action response"),
-        "model": "C3-H-S-S CAMP-lite H16 iter 700",
+        "model": f"C3-H-S-S CAMP-lite H16 iter {args.iteration}",
+        "iteration": args.iteration,
+        "seed": args.seed,
         "episodes": len(episode_records),
         "sam": {
             "checkpoint": str(Path(args.sam_checkpoint)),
