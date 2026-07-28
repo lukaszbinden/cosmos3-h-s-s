@@ -56,6 +56,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Analyze only manifests generated with this diffusion seed.",
     )
+    parser.add_argument(
+        "--expected-manifests",
+        type=int,
+        default=12,
+        help="Expected episode manifests after optional seed filtering.",
+    )
     return parser.parse_args()
 
 
@@ -145,9 +151,9 @@ def main() -> None:
     )
     if args.seed is not None:
         manifests = [path for path in manifests if f"_seed{args.seed}_" in path.name]
-    if len(manifests) != 12:
+    if len(manifests) != args.expected_manifests:
         raise RuntimeError(
-            f"Expected 12 episode manifests for seed {args.seed}, "
+            f"Expected {args.expected_manifests} episode manifests for seed {args.seed}, "
             f"found {len(manifests)}"
         )
 

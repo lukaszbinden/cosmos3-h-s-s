@@ -17,6 +17,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4]
     )
+    parser.add_argument(
+        "--expected-groups",
+        type=int,
+        default=12,
+        help="Expected unique subset/arm/episode/base groups.",
+    )
     return parser.parse_args()
 
 
@@ -33,7 +39,7 @@ def main() -> None:
     manifests = sorted(
         (input_root / "raw").glob("*/*/*_action_intervention_episode.json")
     )
-    expected_count = 12 * len(args.expected_seeds)
+    expected_count = args.expected_groups * len(args.expected_seeds)
     if len(manifests) != expected_count:
         raise RuntimeError(
             f"Expected {expected_count} manifests, found {len(manifests)}"

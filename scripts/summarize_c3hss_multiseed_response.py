@@ -18,6 +18,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4]
     )
+    parser.add_argument(
+        "--focus",
+        default="hf_suturebot:psm1:1382:381",
+        help=(
+            "Optional subset:arm:episode:base window to call out. "
+            "Pass an empty string to omit the focus section."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -106,20 +114,38 @@ def main() -> None:
             }
         )
 
-    focus = next(
-        record
-        for record in episode_groups
-        if record["subset"] == "hf_suturebot"
-        and record["target_arm"] == "psm1"
-        and record["episode_id"] == 1382
-        and record["base_index"] == 381
-    )
-    if focus["localized_seed_count"] == 0:
-        focus_verdict = "systematic_cross_localization"
-    elif focus["localized_seed_count"] == focus["seed_count"]:
-        focus_verdict = "localized_in_all_seeds"
-    else:
-        focus_verdict = "sampling_sensitive"
+    focus = None
+    focus_verdict = None
+    if args.focus:
+        try:
+            focus_subset, focus_arm, focus_episode_text, focus_base_text = (
+                args.focus.split(":")
+            )
+            focus_episode = int(focus_episode_text)
+            focus_base = int(focus_base_text)
+        except ValueError as error:
+            raise ValueError(
+                "--focus must be subset:arm:episode:base or an empty string"
+            ) from error
+        focus = next(
+            (
+                record
+                for record in episode_groups
+                if record["subset"] == focus_subset
+                and record["target_arm"] == focus_arm
+                and record["episode_id"] == focus_episode
+                and record["base_index"] == focus_base
+            ),
+            None,
+        )
+        if focus is None:
+            raise ValueError(f"Focus window {args.focus!r} was not found")
+        if focus["localized_seed_count"] == 0:
+            focus_verdict = "systematic_cross_localization"
+        elif focus["localized_seed_count"] == focus["seed_count"]:
+            focus_verdict = "localized_in_all_seeds"
+        else:
+            focus_verdict = "sampling_sensitive"
 
     payload = {
         "diagnostic": "multi-seed motion-matched tool response",
@@ -127,14 +153,9 @@ def main() -> None:
         "iteration": summaries[0]["iteration"],
         "seeds": found_seeds,
         "localization_threshold": 0.5,
-        "focus_episode": {
-            "subset": "hf_suturebot",
-            "target_arm": "psm1",
-            "episode_id": 1382,
-            "base_index": 381,
-            "verdict": focus_verdict,
-            **focus,
-        },
+        "focus_episode": (
+            {"verdict": focus_verdict, **focus} if focus is not None else None
+        ),
         "cell_groups": cell_groups,
         "episode_groups": episode_groups,
         "source_summaries": [
@@ -180,17 +201,21 @@ def main() -> None:
             f"{record['min']:.3f}–{record['max']:.3f} | "
             f"{record['localized_seed_count']}/{record['seed_count']} |"
         )
-    lines.extend(
-        [
-            "",
-            "## HF PSM1 episode 1382",
-            "",
-            (
-                f"Verdict: `{focus_verdict}`. It localized in "
-                f"{focus['localized_seed_count']}/{focus['seed_count']} seeds."
-            ),
-        ]
-    )
+    if focus is not None:
+        lines.extend(
+            [
+                "",
+                (
+                    f"## Focus: {focus['subset']} {focus['target_arm']} "
+                    f"{focus['episode_id']}:{focus['base_index']}"
+                ),
+                "",
+                (
+                    f"Verdict: `{focus_verdict}`. It localized in "
+                    f"{focus['localized_seed_count']}/{focus['seed_count']} seeds."
+                ),
+            ]
+        )
     (output_dir / "README.md").write_text("\n".join(lines) + "\n")
 
 
