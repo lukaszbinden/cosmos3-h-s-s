@@ -1,0 +1,19 @@
+{
+  "reference_size": [480, 272],
+  "episodes": {
+    "hf_suturebot:1382:381": {
+      "entry_left": {
+        "box": [0, 75, 235, 220],
+        "positive_points": [[45, 145], [115, 160], [185, 158]],
+        "negative_points": [[270, 145], [390, 145]],
+        "manual_polygon": [[108, 156], [200, 156], [200, 171], [110, 171]]
+      },
+      "entry_right": {
+        "box": [205, 65, 480, 210],
+        "positive_points": [[435, 135], [345, 150], [245, 158]],
+        "negative_points": [[120, 160]],
+        "manual_polygon": [[213, 152], [279, 134], [295, 155], [230, 178]]
+      }
+    }
+  }
+}

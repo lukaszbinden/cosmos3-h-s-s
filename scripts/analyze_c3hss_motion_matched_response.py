@@ -653,9 +653,9 @@ def main() -> None:
     lines = [
         "# Motion-matched, anchor-preserving action response",
         "",
-        "Each cell uses three unique official-test episodes with target-arm",
-        "translation matched to about 0.65 mm per 0.1 s and low opposite-arm",
-        "motion. Every intervention preserves the first model-facing action row.",
+        "Each cell measures first-row-anchored physical-axis interventions",
+        "against the correct-action generation from the same fixed input.",
+        "Ground-truth tool masks are tracked separately from generated videos.",
         "",
         "| Dataset | Target arm | Intended tool | Eligible probes | Intended response fraction | Intended Δ | Other Δ | Accuracy Δ |",
         "|---|---|---|---:|---:|---:|---:|---:|",
@@ -692,11 +692,10 @@ def main() -> None:
     lines.extend(
         [
             "",
-            "All selected windows visibly move the tool mapped to the active",
-            "arm more than the other tool. PSM2 counterfactuals localize to",
-            "that tool in every HF SutureBot and NephFat episode. HF PSM1 is",
-            "context-sensitive: two episodes localize correctly, while episode",
-            "1382 does not.",
+            "Ground-truth target/other ratios describe visible motion in the",
+            "recorded window; response fractions describe where the model",
+            "places the counterfactual change. A strong ground-truth ratio",
+            "therefore does not guarantee correct model localization.",
         ]
     )
     (output_dir / "README.md").write_text("\n".join(lines) + "\n")
