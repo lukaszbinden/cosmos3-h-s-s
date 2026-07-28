@@ -27,6 +27,7 @@ CONTAINER_IMAGE=$LUKAS_ROOT/images/cosmos3.sqsh
 DRACO_NVML_PATH=$LUKAS_ROOT/images/nvidia-pinned
 CHECKPOINT=${CHECKPOINT:-$LUKAS_ROOT/imaginaire/output/cosmos3_action_surgical/action_open_h_camp/camp-arm-b-h16-iter_000015000/checkpoints/iter_$(printf '%09d' "$CHECKPOINT_ITER")}
 SEEDS=${SEEDS:-0}
+DATA_SEED=${DATA_SEED:-1729}
 PHYSICAL_COMPONENTS=${PHYSICAL_COMPONENTS:-"tx ty tz rx ry rz jaw"}
 
 source "$LUKAS_WORKSPACE/env.sh"
@@ -86,6 +87,7 @@ echo "checkpoint_iter=$CHECKPOINT_ITER"
 echo "selection=3 unique episodes per arm per dataset, target 0.65 mm/step"
 echo "anchor_mode=first_row"
 echo "seeds=$SEEDS"
+echo "data_seed=$DATA_SEED"
 echo "physical_components=$PHYSICAL_COMPONENTS"
 echo "output_root=$OUTPUT_ROOT"
 
@@ -97,5 +99,5 @@ srun --ntasks=1 --ntasks-per-node=1 \
     --container-image="$CONTAINER_IMAGE" \
     --container-mounts="$MOUNTS" \
     --container-workdir=/workspace \
-    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",OUTPUT_ROOT="$OUTPUT_ROOT",DVRK_OPENH_ROOT="$DVRK_OPENH_ROOT",DVRK_LZ_ROOT="$DVRK_LZ_ROOT",SEEDS="$SEEDS",PHYSICAL_COMPONENTS="$PHYSICAL_COMPONENTS",COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1,COSMOS_OPENH_NUM_HISTORY_ACTIONS=16 \
+    --export=ALL,CHECKPOINT="$CHECKPOINT",CHECKPOINT_ITER="$CHECKPOINT_ITER",OUTPUT_ROOT="$OUTPUT_ROOT",DVRK_OPENH_ROOT="$DVRK_OPENH_ROOT",DVRK_LZ_ROOT="$DVRK_LZ_ROOT",SEEDS="$SEEDS",DATA_SEED="$DATA_SEED",PHYSICAL_COMPONENTS="$PHYSICAL_COMPONENTS",COSMOS_OPENH_PATH_LAYOUT=draco_internal,COSMOS_OPENH_STATS_POSTFIX=c3hss-v1,COSMOS_OPENH_NUM_HISTORY_ACTIONS=16 \
     bash /eval/run_lukas_c3hss_motion_matched_anchor_draco.sh

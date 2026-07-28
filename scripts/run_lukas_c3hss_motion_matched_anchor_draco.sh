@@ -10,6 +10,7 @@ set -euo pipefail
 : "${DVRK_LZ_ROOT:?launcher must provide the Lucas Open-H-lz root}"
 
 SEEDS=${SEEDS:-0}
+DATA_SEED=${DATA_SEED:-1729}
 PHYSICAL_COMPONENTS=${PHYSICAL_COMPONENTS:-"tx ty tz rx ry rz jaw"}
 read -r -a physical_components <<<"$PHYSICAL_COMPONENTS"
 
@@ -67,6 +68,7 @@ run_group() {
                 --timestep-interval=3 \
                 --iteration "$CHECKPOINT_ITER" \
                 --seed "$seed" \
+                --data-seed "$DATA_SEED" \
                 --guidance 1.5 \
                 --num-sampling-step 16 \
                 --num-history-actions 16 \

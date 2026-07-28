@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import math
+import random
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
@@ -71,6 +72,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-base-index", type=int, default=48)
     parser.add_argument("--iteration", type=int, default=700)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--data-seed",
+        type=int,
+        default=1729,
+        help=(
+            "Seed dataset-side stochastic transforms independently from the "
+            "diffusion sampling seed."
+        ),
+    )
     parser.add_argument("--guidance", type=float, default=1.5)
     parser.add_argument("--num-sampling-step", type=int, default=16)
     parser.add_argument("--num-history-actions", type=int, default=16)
@@ -349,6 +359,12 @@ def main() -> None:
     config.validate()
     config.freeze()
 
+    random.seed(args.data_seed)
+    np.random.seed(args.data_seed)
+    torch.manual_seed(args.data_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.data_seed)
+
     base = OpenHMixedLeRobotDataset(
         dataset_specs=[
             {"path": args.dataset, "embodiment": args.embodiment, "mix_ratio": 1.0}
@@ -569,10 +585,15 @@ def main() -> None:
         episode_record = {
             "episode_id": episode_id,
             "base_index": base_index,
+            "sampling_seed": args.seed,
+            "data_seed": args.data_seed,
             "donor_episode_id": (
                 donor_episode if args.variant_set == "normalized_probes" else None
             ),
             "ground_truth_video": str(ground_truth_path),
+            "ground_truth_frames_sha256": hashlib.sha256(
+                np.ascontiguousarray(gt).tobytes()
+            ).hexdigest(),
             "normalized_actions_archive": str(action_archive),
             "history_action_sha256": _tensor_sha256(raw_sample["history_action"]),
             "motion_roi_fraction": float(motion_mask.mean()),
@@ -606,6 +627,7 @@ def main() -> None:
         "chunk_size": CHUNK_SIZE,
         "num_history_actions": args.num_history_actions,
         "seed": args.seed,
+        "data_seed": args.data_seed,
         "guidance": args.guidance,
         "num_sampling_step": args.num_sampling_step,
         "motion_roi_definition": (
