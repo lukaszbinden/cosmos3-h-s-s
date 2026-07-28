@@ -1,0 +1,35 @@
+{
+  "design": "non-overlapping temporal neighborhoods around two PSM1 binding failures",
+  "timestep_interval": 3,
+  "current_action_count": 12,
+  "base_stride": 36,
+  "checkpoint_iteration": 900,
+  "target_arm": "psm1",
+  "physical_components": ["tx", "ty", "tz"],
+  "episodes": {
+    "141": {
+      "split_role": "training",
+      "length": 629,
+      "focus_base": 216,
+      "windows": [
+        {"base_index": 144, "relative_base": -72, "progress": 0.2293, "phase": "early"},
+        {"base_index": 180, "relative_base": -36, "progress": 0.2866, "phase": "early"},
+        {"base_index": 216, "relative_base": 0, "progress": 0.3439, "phase": "middle"},
+        {"base_index": 252, "relative_base": 36, "progress": 0.4013, "phase": "middle"},
+        {"base_index": 288, "relative_base": 72, "progress": 0.4586, "phase": "middle"}
+      ]
+    },
+    "1382": {
+      "split_role": "held_out",
+      "length": 780,
+      "focus_base": 381,
+      "windows": [
+        {"base_index": 309, "relative_base": -72, "progress": 0.3967, "phase": "middle"},
+        {"base_index": 345, "relative_base": -36, "progress": 0.4429, "phase": "middle"},
+        {"base_index": 381, "relative_base": 0, "progress": 0.4891, "phase": "middle"},
+        {"base_index": 417, "relative_base": 36, "progress": 0.5353, "phase": "middle"},
+        {"base_index": 453, "relative_base": 72, "progress": 0.5815, "phase": "middle"}
+      ]
+    }
+  }
+}

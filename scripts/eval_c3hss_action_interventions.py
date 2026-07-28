@@ -316,10 +316,8 @@ def main() -> None:
         requested_windows = [
             (episode_id, args.start_base_index) for episode_id in args.episodes
         ]
-    if len({episode_id for episode_id, _ in requested_windows}) != len(
-        requested_windows
-    ):
-        raise ValueError("Each requested window must use a distinct episode")
+    if len(set(requested_windows)) != len(requested_windows):
+        raise ValueError("Each requested episode/base-index pair must be unique")
     episode_ids = [episode_id for episode_id, _ in requested_windows]
     if args.variant_set == "normalized_probes" and args.start_base_index < max(
         abs(value) for value in SHIFT_RAW_FRAMES
