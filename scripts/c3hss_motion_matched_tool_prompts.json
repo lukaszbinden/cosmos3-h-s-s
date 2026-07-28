@@ -1,0 +1,150 @@
+{
+  "reference_size": [480, 272],
+  "objects": ["entry_left", "entry_right"],
+  "episodes": {
+    "hf_suturebot:1382:381": {
+      "entry_left": {
+        "box": [0, 75, 235, 220],
+        "positive_points": [[45, 145], [115, 160], [185, 158]],
+        "negative_points": [[270, 145], [390, 145]]
+      },
+      "entry_right": {
+        "box": [205, 65, 480, 210],
+        "positive_points": [[435, 135], [345, 150], [245, 158]],
+        "negative_points": [[120, 160]]
+      }
+    },
+    "hf_suturebot:1401:246": {
+      "entry_left": {
+        "box": [0, 105, 245, 235],
+        "positive_points": [[45, 180], [120, 180], [195, 177]],
+        "negative_points": [[280, 95]]
+      },
+      "entry_right": {
+        "box": [230, 0, 470, 140],
+        "positive_points": [[385, 45], [335, 80], [275, 98]],
+        "negative_points": [[150, 180]]
+      }
+    },
+    "hf_suturebot:1445:159": {
+      "entry_left": {
+        "box": [0, 105, 255, 230],
+        "positive_points": [[55, 165], [125, 180], [205, 177]],
+        "negative_points": [[330, 190]]
+      },
+      "entry_right": {
+        "box": [265, 125, 480, 250],
+        "positive_points": [[430, 210], [370, 195], [315, 175]],
+        "negative_points": [[170, 180]]
+      }
+    },
+    "hf_suturebot:1314:60": {
+      "entry_left": {
+        "box": [0, 5, 235, 155],
+        "positive_points": [[55, 35], [105, 85], [170, 120]],
+        "negative_points": [[390, 150]]
+      },
+      "entry_right": {
+        "box": [335, 105, 480, 205],
+        "positive_points": [[460, 155], [420, 150], [370, 135]],
+        "negative_points": [[135, 100]]
+      }
+    },
+    "hf_suturebot:1318:108": {
+      "entry_left": {
+        "box": [0, 105, 260, 225],
+        "positive_points": [[55, 165], [125, 178], [210, 175]],
+        "negative_points": [[355, 175]]
+      },
+      "entry_right": {
+        "box": [260, 115, 480, 225],
+        "positive_points": [[440, 175], [380, 180], [315, 163]],
+        "negative_points": [[160, 178]]
+      }
+    },
+    "hf_suturebot:1361:246": {
+      "entry_left": {
+        "box": [0, 125, 265, 265],
+        "positive_points": [[55, 210], [135, 210], [220, 195]],
+        "negative_points": [[350, 175]]
+      },
+      "entry_right": {
+        "box": [245, 80, 480, 220],
+        "positive_points": [[430, 170], [380, 160], [305, 130]],
+        "negative_points": [[150, 210]]
+      }
+    },
+    "nephfat:1954:108": {
+      "entry_left": {
+        "box": [45, 165, 190, 272],
+        "positive_points": [[75, 245], [105, 225], [145, 205]],
+        "negative_points": [[330, 170]]
+      },
+      "entry_right": {
+        "box": [190, 90, 480, 260],
+        "positive_points": [[430, 225], [350, 190], [250, 145]],
+        "negative_points": [[115, 220]]
+      }
+    },
+    "nephfat:2091:63": {
+      "entry_left": {
+        "box": [0, 185, 150, 272],
+        "positive_points": [[30, 255], [65, 238], [105, 220]],
+        "negative_points": [[320, 210]]
+      },
+      "entry_right": {
+        "box": [180, 155, 480, 272],
+        "positive_points": [[440, 248], [350, 232], [245, 205]],
+        "negative_points": [[80, 235]]
+      }
+    },
+    "nephfat:2106:129": {
+      "entry_left": {
+        "box": [0, 190, 165, 272],
+        "positive_points": [[35, 255], [75, 240], [120, 225]],
+        "negative_points": [[340, 225]]
+      },
+      "entry_right": {
+        "box": [235, 175, 480, 272],
+        "positive_points": [[445, 250], [380, 235], [300, 215]],
+        "negative_points": [[80, 240]]
+      }
+    },
+    "nephfat:1906:315": {
+      "entry_left": {
+        "box": [45, 105, 260, 272],
+        "positive_points": [[90, 250], [145, 205], [205, 145]],
+        "negative_points": [[345, 180]]
+      },
+      "entry_right": {
+        "box": [215, 70, 480, 272],
+        "positive_points": [[435, 225], [350, 185], [265, 105]],
+        "negative_points": [[145, 205]]
+      }
+    },
+    "nephfat:1908:186": {
+      "entry_left": {
+        "box": [165, 130, 330, 272],
+        "positive_points": [[215, 255], [255, 210], [300, 155]],
+        "negative_points": [[390, 125]]
+      },
+      "entry_right": {
+        "box": [300, 90, 480, 180],
+        "positive_points": [[455, 135], [390, 125], [330, 120]],
+        "negative_points": [[260, 210]]
+      }
+    },
+    "nephfat:1914:240": {
+      "entry_left": {
+        "box": [0, 195, 270, 272],
+        "positive_points": [[35, 250], [120, 240], [210, 225]],
+        "negative_points": [[360, 225]]
+      },
+      "entry_right": {
+        "box": [230, 190, 480, 272],
+        "positive_points": [[445, 240], [370, 225], [285, 215]],
+        "negative_points": [[125, 240]]
+      }
+    }
+  }
+}
