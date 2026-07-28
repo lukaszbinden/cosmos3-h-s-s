@@ -331,6 +331,7 @@ def main() -> None:
             "candidate": candidate,
             "reference": reference,
             "metrics": {},
+            "strata": [],
         }
         for metric in METRICS:
             candidate_windows = _window_means(loaded[candidate], metric)
@@ -347,6 +348,33 @@ def main() -> None:
                 "candidate_higher_window_count": int(np.sum(differences > 0)),
                 "window_count": len(differences),
             }
+        for subset, target in strata:
+            stratum_metrics = {}
+            for metric in METRICS:
+                candidate_windows = _window_means(
+                    _select(loaded[candidate], subset, target), metric
+                )
+                reference_windows = _window_means(
+                    _select(loaded[reference], subset, target), metric
+                )
+                differences = np.asarray(
+                    [
+                        candidate_windows[identity] - reference_windows[identity]
+                        for identity in sorted(candidate_windows)
+                    ]
+                )
+                stratum_metrics[metric] = {
+                    "candidate_minus_reference_mean": float(differences.mean()),
+                    "candidate_higher_window_count": int(np.sum(differences > 0)),
+                    "window_count": len(differences),
+                }
+            comparison["strata"].append(
+                {
+                    "subset": subset,
+                    "target_arm": target,
+                    "metrics": stratum_metrics,
+                }
+            )
         comparisons.append(comparison)
 
     payload = {
