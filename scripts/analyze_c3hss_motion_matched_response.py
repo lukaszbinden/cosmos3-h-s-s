@@ -41,6 +41,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--roi-dilation", type=int, default=24)
     parser.add_argument("--fps", type=int, default=10)
     parser.add_argument("--iteration", type=int, default=700)
+    parser.add_argument(
+        "--reference-gt-masks-dir",
+        default=None,
+        help=(
+            "Reuse gt__ tool tracks from this masks directory while tracking "
+            "only the seed-specific correct-action prediction."
+        ),
+    )
     parser.add_argument("--reuse-masks", action="store_true")
     parser.add_argument(
         "--seed",
@@ -156,6 +164,17 @@ def main() -> None:
         not (args.reuse_masks and path.exists()) for path in mask_paths.values()
     )
     prompt_audits: dict[str, Any] = {}
+    reference_gt_masks: dict[tuple[str, str, int, int], dict[str, np.ndarray]] = {}
+    if args.reference_gt_masks_dir is not None:
+        reference_dir = Path(args.reference_gt_masks_dir).resolve()
+        for identity in mask_paths:
+            reference_path = _mask_path(reference_dir, *identity)
+            if not reference_path.exists():
+                raise FileNotFoundError(reference_path)
+            with np.load(reference_path) as archive:
+                reference_gt_masks[identity] = {
+                    name: archive[f"gt__{name}"].astype(bool) for name in OBJECTS
+                }
     previous_summary_path = output_dir / "matched_response_summary.json"
     if args.reuse_masks and previous_summary_path.exists():
         previous_summary = json.loads(previous_summary_path.read_text())
@@ -167,44 +186,50 @@ def main() -> None:
                 prompt_audits[prompt_key] = episode["prompt_audit"]
 
     if need_tracking:
-        image_model = build_sam2(
-            args.sam_config, args.sam_checkpoint, device=args.device
-        )
-        image_predictor = SAM2ImagePredictor(image_model)
         initial_by_identity = {}
-        for manifest_path, _, identity in manifest_records:
-            subset, target_arm, episode_id, base_index = identity
-            if args.reuse_masks and mask_paths[identity].exists():
-                continue
-            ground_truth = tools._read_video(
-                _resolve_video(
-                    manifest_path.parent,
-                    episode_id,
-                    base_index,
-                    "ground_truth",
-                    args.seed,
+        if reference_gt_masks:
+            initial_by_identity = {
+                identity: {name: masks[name][0] for name in OBJECTS}
+                for identity, masks in reference_gt_masks.items()
+            }
+        else:
+            image_model = build_sam2(
+                args.sam_config, args.sam_checkpoint, device=args.device
+            )
+            image_predictor = SAM2ImagePredictor(image_model)
+            for manifest_path, _, identity in manifest_records:
+                subset, target_arm, episode_id, base_index = identity
+                if args.reuse_masks and mask_paths[identity].exists():
+                    continue
+                ground_truth = tools._read_video(
+                    _resolve_video(
+                        manifest_path.parent,
+                        episode_id,
+                        base_index,
+                        "ground_truth",
+                        args.seed,
+                    )
                 )
-            )
-            prompt_key = f"{subset}:{episode_id}:{base_index}"
-            if prompt_key not in prompts["episodes"]:
-                raise KeyError(f"Missing reviewed prompts for {prompt_key}")
-            initial, audit = tools._initial_masks(
-                image_predictor,
-                ground_truth[0],
-                prompts["episodes"][prompt_key],
-                reference_size,
-            )
-            initial_by_identity[identity] = initial
-            prompt_audits[prompt_key] = audit
-            print(
-                f"PROMPTED subset={subset} arm={target_arm} "
-                f"episode={episode_id} base={base_index}",
-                flush=True,
-            )
-        del image_predictor, image_model
-        gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+                prompt_key = f"{subset}:{episode_id}:{base_index}"
+                if prompt_key not in prompts["episodes"]:
+                    raise KeyError(f"Missing reviewed prompts for {prompt_key}")
+                initial, audit = tools._initial_masks(
+                    image_predictor,
+                    ground_truth[0],
+                    prompts["episodes"][prompt_key],
+                    reference_size,
+                )
+                initial_by_identity[identity] = initial
+                prompt_audits[prompt_key] = audit
+                print(
+                    f"PROMPTED subset={subset} arm={target_arm} "
+                    f"episode={episode_id} base={base_index}",
+                    flush=True,
+                )
+            del image_predictor, image_model
+            gc.collect()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
         video_predictor = build_sam2_video_predictor(
             args.sam_config, args.sam_checkpoint, device=args.device
@@ -232,7 +257,11 @@ def main() -> None:
                 )
             )
             initial = initial_by_identity[identity]
-            gt_masks = tools._track_video(video_predictor, ground_truth, initial)
+            gt_masks = (
+                reference_gt_masks[identity]
+                if reference_gt_masks
+                else tools._track_video(video_predictor, ground_truth, initial)
+            )
             correct_masks = tools._track_video(video_predictor, correct, initial)
             np.savez_compressed(
                 mask_paths[identity],
@@ -588,6 +617,11 @@ def main() -> None:
             "prompt_file": str(Path(args.prompts)),
         },
         "anchor_mode": "first_row",
+        "reference_gt_masks_dir": (
+            str(Path(args.reference_gt_masks_dir).resolve())
+            if args.reference_gt_masks_dir is not None
+            else None
+        ),
         "arm_to_tool_mapping": ARM_TO_TOOL,
         "aggregate_groups": aggregate_groups,
         "episode_groups": episode_groups,
