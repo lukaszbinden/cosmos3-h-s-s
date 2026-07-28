@@ -1,0 +1,127 @@
+{
+  "reference_size": [480, 272],
+  "objects": ["entry_left", "entry_right"],
+  "episodes": {
+    "hf_suturebot:1420": {
+      "entry_left": {
+        "box": [0, 110, 235, 271],
+        "positive_points": [[55, 180], [140, 180], [195, 185]],
+        "negative_points": [[230, 125]]
+      },
+      "entry_right": {
+        "box": [225, 0, 455, 142],
+        "positive_points": [[332, 38], [300, 85], [266, 99]],
+        "negative_points": [[430, 135]]
+      }
+    },
+    "hf_suturebot:1426": {
+      "entry_left": {
+        "box": [0, 105, 220, 215],
+        "positive_points": [[50, 150], [100, 160], [150, 165], [190, 168]],
+        "negative_points": [[100, 205], [180, 215], [220, 195], [210, 125]]
+      },
+      "entry_right": {
+        "box": [225, 0, 465, 150],
+        "positive_points": [[360, 45], [325, 83], [285, 105]],
+        "negative_points": [[220, 145]]
+      }
+    },
+    "hf_suturebot:1435": {
+      "entry_left": {
+        "box": [0, 115, 215, 200],
+        "positive_points": [[55, 160], [135, 165], [190, 165]],
+        "negative_points": [[145, 225], [220, 220], [225, 125]]
+      },
+      "entry_right": {
+        "box": [215, 0, 455, 110],
+        "positive_points": [[345, 30], [312, 58], [270, 70]],
+        "negative_points": [[250, 125], [440, 120]]
+      }
+    },
+    "nephfat:2046": {
+      "entry_left": {
+        "box": [20, 185, 175, 271],
+        "positive_points": [[55, 240], [100, 222], [145, 209]],
+        "negative_points": [[260, 218]]
+      },
+      "entry_right": {
+        "box": [210, 170, 480, 271],
+        "positive_points": [[430, 260], [335, 247], [255, 210]],
+        "negative_points": [[150, 220]]
+      }
+    },
+    "nephfat:2049": {
+      "entry_left": {
+        "box": [35, 160, 250, 271],
+        "positive_points": [[75, 235], [140, 210], [205, 202]],
+        "negative_points": [[315, 220]]
+      },
+      "entry_right": {
+        "box": [185, 150, 480, 271],
+        "positive_points": [[425, 245], [325, 215], [245, 200]],
+        "negative_points": [[100, 220]]
+      }
+    },
+    "nephfat:2052": {
+      "entry_left": {
+        "box": [150, 165, 250, 271],
+        "positive_points": [[185, 252], [195, 230], [205, 210], [220, 198], [238, 185]],
+        "negative_points": [[225, 230], [240, 245], [250, 220], [260, 205], [275, 190]],
+        "manual_polygon": [[150, 271], [172, 235], [181, 207], [204, 181], [238, 174], [244, 188], [220, 205], [207, 232], [190, 271]]
+      },
+      "entry_right": {
+        "box": [230, 140, 480, 260],
+        "positive_points": [[420, 225], [340, 202], [275, 176]],
+        "negative_points": [[190, 215]]
+      }
+    },
+    "wound_closure:209": {
+      "entry_left": {
+        "box": [100, 185, 285, 271],
+        "positive_points": [[175, 250], [205, 230], [245, 238]],
+        "negative_points": [[400, 110]]
+      },
+      "entry_right": {
+        "box": [305, 55, 480, 170],
+        "positive_points": [[445, 100], [395, 108], [345, 130]],
+        "negative_points": [[205, 230]]
+      }
+    },
+    "wound_closure:212": {
+      "entry_left": {
+        "box": [0, 120, 260, 240],
+        "positive_points": [[75, 180], [150, 170], [215, 188]],
+        "negative_points": [[410, 145]]
+      },
+      "entry_right": {
+        "box": [330, 80, 480, 200],
+        "positive_points": [[450, 140], [400, 142], [350, 160]],
+        "negative_points": [[170, 175]]
+      }
+    },
+    "wound_closure:214": {
+      "entry_left": {
+        "box": [0, 95, 235, 215],
+        "positive_points": [[70, 155], [140, 150], [205, 160]],
+        "negative_points": [[390, 140]]
+      },
+      "entry_right": {
+        "box": [300, 85, 480, 195],
+        "positive_points": [[435, 138], [375, 140], [320, 158]],
+        "negative_points": [[150, 150]]
+      }
+    },
+    "wound_closure:215": {
+      "entry_left": {
+        "box": [0, 75, 335, 215],
+        "positive_points": [[90, 130], [220, 135], [295, 145]],
+        "negative_points": [[425, 120]]
+      },
+      "entry_right": {
+        "box": [360, 70, 480, 175],
+        "positive_points": [[450, 118], [405, 120], [370, 140]],
+        "negative_points": [[270, 140]]
+      }
+    }
+  }
+}
