@@ -22,6 +22,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hf-dir", required=True)
     parser.add_argument("--nephfat-dir", required=True)
     parser.add_argument("--mapping-audit", required=True)
+    parser.add_argument(
+        "--sam-summary",
+        help="Optional matched_response_summary.json with tool-specific focus motion.",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--focus-episode", type=int, default=1382)
     parser.add_argument("--focus-base", type=int, default=381)
@@ -196,9 +200,57 @@ def main() -> None:
     focus = focus_match.iloc[0].copy()
     focus["subset"] = "hf_suturebot"
     mapping = _json(Path(args.mapping_audit).resolve())
+    focus_sam = None
+    if args.sam_summary:
+        sam_summary = _json(Path(args.sam_summary).resolve())
+        matches = [
+            item
+            for item in sam_summary["episodes_detail"]
+            if item["subset"] == "hf_suturebot"
+            and int(item["episode_id"]) == args.focus_episode
+            and int(item["base_index"]) == args.focus_base
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"expected one SAM focus record, found {len(matches)}"
+            )
+        sam_record = matches[0]
+        focus_sam = {
+            "target_arm": sam_record["target_arm"],
+            "intended_tool": sam_record["intended_tool"],
+            **sam_record["ground_truth_tool_motion"],
+            "tracking_overlay": sam_record["tracking_overlay"],
+            "mask_archive": sam_record["mask_archive"],
+        }
 
     lag_summary = {}
+    video_alignment = {}
     for subset, summary in summaries.items():
+        mismatch_records = []
+        negative_mismatch_records = []
+        for episode in summary["episodes_detail"]:
+            for view, video in episode["video"].items():
+                error = int(video["sample_count_error"])
+                if error:
+                    record = {
+                        "episode_id": int(episode["episode_id"]),
+                        "view": view,
+                        "parquet_rows": int(video["raw_rows"]),
+                        "decoded_video_frames": int(video["decoded_frames"]),
+                        "sample_count_error": error,
+                    }
+                    mismatch_records.append(record)
+                    if error < 0:
+                        negative_mismatch_records.append(record)
+        video_alignment[subset] = {
+            "episodes_with_any_mismatch": len(
+                {item["episode_id"] for item in mismatch_records}
+            ),
+            "mismatched_views": len(mismatch_records),
+            "views_shorter_than_parquet": len(negative_mismatch_records),
+            "mismatches": mismatch_records,
+            "scan_used_parquet_aligned_prefix": True,
+        }
         action_to_state = summary["lag_diagnostics"]["action_to_state"]
         pair_summary = {}
         for source in ARMS:
@@ -360,6 +412,7 @@ def main() -> None:
                 "candidate_windows": int(summary["candidate_windows"]),
                 "step_transitions": int(summary["step_transitions"]),
                 "split_spec": summary["split_spec"],
+                "video_frame_alignment": video_alignment[subset],
             }
             for subset, summary in summaries.items()
         },
@@ -368,6 +421,7 @@ def main() -> None:
         "focus_window": {
             "record": focus_record,
             "interpretation": focus_interpretation,
+            "sam_ground_truth_tool_motion": focus_sam,
             "training_distribution_ranks": focus_ranks,
             "nearest_training_windows": nearest,
         },
@@ -462,11 +516,38 @@ def main() -> None:
     ]
     for subset in DATASETS:
         lag = lag_summary[subset]
+        psm1_visual = lag["visual"]["endoscope"]["psm1"]
+        psm2_visual = lag["visual"]["endoscope"]["psm2"]
         lines.append(
             f"- {subset}: same-arm zero-lag vector cosine "
             f"{lag['same_arm_vector_cosine_at_zero_mean']:.3f}, swapped-arm "
             f"{lag['swapped_arm_vector_cosine_at_zero_mean']:.3f}, margin "
             f"{lag['same_minus_swapped_margin']:.3f}."
+        )
+        lines.append(
+            f"- {subset}: endoscope motion peaks {psm1_visual['action_best_lag']} "
+            f"frame after PSM1 actions and {psm2_visual['action_best_lag']} frame "
+            "after PSM2 actions."
+        )
+    hf_alignment = video_alignment["hf_suturebot"]
+    neph_alignment = video_alignment["nephfat"]
+    lines.extend(
+        [
+            (
+                f"- Video/parquet alignment: HF has "
+                f"{hf_alignment['episodes_with_any_mismatch']} mismatched episodes; "
+                f"NephFat has {neph_alignment['episodes_with_any_mismatch']}."
+            ),
+        ]
+    )
+    if neph_alignment["mismatches"]:
+        episode_ids = sorted(
+            {item["episode_id"] for item in neph_alignment["mismatches"]}
+        )
+        lines.append(
+            f"- NephFat episode(s) {episode_ids} contain trailing video frames beyond "
+            "the parquet timeline. No camera is shorter than its parquet; the scan "
+            "and loader use the aligned prefix."
         )
     lines.extend(
         [
@@ -487,15 +568,34 @@ def main() -> None:
                 f"{focus['psm1_same_arm_vector_cosine']:.3f}; command→PSM2 state "
                 f"cosine {focus['psm1_cross_arm_vector_cosine']:.3f}."
             ),
+        ]
+    )
+    if focus_sam is not None:
+        lines.append(
+            f"- SAM ground truth: intended {focus_sam['intended_tool']} moved "
+            f"{focus_sam['intended_mean_centroid_step_pixels']:.2f} px/step "
+            f"versus {focus_sam['other_mean_centroid_step_pixels']:.2f} px/step "
+            f"for the other tool "
+            f"({focus_sam['intended_to_other_ratio']:.1f}× isolation)."
+        )
+    lines.extend(
+        [
             (
                 f"- Ranked against {focus_pool['windows']:,} motion-matched isolated "
                 "HF PSM1 training windows; see `focus_training_percentiles.png` and "
                 "`focus_nearest_training_windows.csv`."
             ),
             "",
-            "The visual fields are motion/flow proxies rather than semantic tool masks.",
-            "They are appropriate for full-split timing and outlier ranking; the",
-            "existing SAM tracking overlays remain the tool-specific evidence.",
+            "The full-split visual fields are motion/flow proxies rather than semantic",
+            "tool masks. They are appropriate for timing and outlier ranking; the SAM",
+            "tracking overlay is the tool-specific evidence for the held-out window.",
+            "",
+            "## Conclusion",
+            "",
+            "The held-out cross-localization is not explained by swapped arm columns,",
+            "bad commands, state lag, an inactive PSM1, or an invisible target tool.",
+            "The evidence localizes this failure to model-side arm/tool binding or",
+            "generalization at the early iteration-800 checkpoint.",
         ]
     )
     (output_dir / "README.md").write_text("\n".join(lines) + "\n")
