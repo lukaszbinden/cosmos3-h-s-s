@@ -75,6 +75,16 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--iteration", type=int, default=8000)
     p.add_argument("--max-chunks", type=int, default=9)
+    p.add_argument(
+        "--output-frames",
+        type=int,
+        default=None,
+        help=(
+            "Optionally trim the completed rollout to exactly this many frames "
+            "before scoring and writing videos. The model still generates all "
+            "--max-chunks chunks."
+        ),
+    )
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--guidance", type=float, default=1.5)
     p.add_argument("--num-sampling-step", type=int, default=16)
@@ -176,6 +186,16 @@ def main() -> None:
         raise ValueError("--timestep-interval must be positive")
     if args.start_base_index < 0:
         raise ValueError("--start-base-index must be non-negative")
+    full_rollout_frames = 1 + args.max_chunks * CHUNK_SIZE
+    if (
+        args.output_frames is not None
+        and not 2 <= args.output_frames <= full_rollout_frames
+    ):
+        raise ValueError(
+            "--output-frames must be between 2 and the generated rollout length "
+            f"({full_rollout_frames}), got {args.output_frames}"
+        )
+    expected_output_frames = args.output_frames or full_rollout_frames
     if not 0.0 < args.test_split_ratio < 1.0:
         raise ValueError("--test-split-ratio must be in (0, 1)")
     dataset_name = Path(args.dataset).name
@@ -286,7 +306,7 @@ def main() -> None:
             gt = np.asarray(mediapy.read_video(ground_truth_path), dtype=np.uint8)
             generated = np.asarray(mediapy.read_video(generated_path), dtype=np.uint8)
             n = min(len(gt), len(generated))
-            if n == 1 + args.max_chunks * CHUNK_SIZE:
+            if n == expected_output_frames:
                 gt, generated = gt[:n], generated[:n]
                 gt_score, generated_score = _score_pair(gt, generated, args.score_size)
                 fds = compute_frame_decay(gt_score, generated_score)
@@ -400,6 +420,10 @@ def main() -> None:
         )
         n = min(len(gt), len(generated))
         gt, generated = gt[:n], generated[:n]
+        if args.output_frames is not None:
+            gt = gt[: args.output_frames]
+            generated = generated[: args.output_frames]
+            n = min(len(gt), len(generated))
         gt_score, generated_score = _score_pair(gt, generated, args.score_size)
         fds = compute_frame_decay(gt_score, generated_score)
         mediapy.write_video(output_dir / f"{tag}_ground_truth.mp4", gt, fps=args.fps)
@@ -432,6 +456,8 @@ def main() -> None:
         "test_split_ratio": args.test_split_ratio,
         "episodes": args.episodes,
         "max_chunks": args.max_chunks,
+        "generated_rollout_frames": full_rollout_frames,
+        "output_frames": expected_output_frames,
         "chunk_size": CHUNK_SIZE,
         "timestep_interval": args.timestep_interval,
         "start_base_index": args.start_base_index,
