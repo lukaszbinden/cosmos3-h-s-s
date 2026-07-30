@@ -186,6 +186,20 @@ def _dataset_set_signature(args) -> tuple[list[str], str]:
         emb = spec["embodiment"]
         emb = emb.value if isinstance(emb, EmbodimentTag) else emb
         leaves.append(f"{emb}:{Path(spec['path']).name}")
+    if args.cmr_clean_catalog:
+        manifest_path = Path(args.cmr_clean_catalog) / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                f"CMR clean catalog manifest not found: {manifest_path}"
+            )
+        with manifest_path.open() as stream:
+            manifest = json.load(stream)
+        catalog_id = manifest.get("catalog_id")
+        if not catalog_id:
+            raise ValueError(
+                f"CMR clean catalog has no content-addressed catalog_id: {manifest_path}"
+            )
+        leaves.append(f"cmr_clean_catalog:{catalog_id}")
     leaves = sorted(leaves)
     h = hashlib.sha1("\n".join(leaves).encode()).hexdigest()[:12]
     return leaves, h
@@ -209,6 +223,7 @@ def _iter_specs(args):
         cmr_base_path=args.cmr_root,
         path_layout=args.path_layout,
         openh_lz_base_path=args.openh_lz_root,
+        cmr_clean_catalog_root=args.cmr_clean_catalog,
     ):
         emb = spec["embodiment"]
         emb = emb.value if isinstance(emb, EmbodimentTag) else emb
@@ -280,6 +295,7 @@ def compute_for_dataset(
     data_split: str = "train",
     test_split_ratio: float = 0.02,
     write_sidecar: bool = True,
+    cmr_clean_catalog_root: str | None = None,
 ) -> Path | None:
     from cosmos_framework.data.vfm.action.gr00t_dreams.data.dataset import WrappedLeRobotSingleDataset
     from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import EMBODIMENT_REGISTRY
@@ -319,8 +335,9 @@ def compute_for_dataset(
     # model's input scaling. We therefore build the SAME WrappedLeRobotSingleDataset
     # split the experiment config uses (data_split="train", test_split_ratio=0.02)
     # so the stats are fit on exactly the frames the model trains on.
-    # Consequence: for CMR this needs the *train* clutch cache
-    # (cmr_filter_cache_train_<hash>-44D.json), same hash the trainer uses.
+    # For CMR, a supplied strict clean catalog supersedes the legacy train
+    # clutch cache so normalization is fit on the same reviewed windows as
+    # training. The catalog_id is included in dataset_set_hash provenance.
     ds = WrappedLeRobotSingleDataset(
         dataset_path=str(dataset_path),
         modality_configs=config,
@@ -329,6 +346,9 @@ def compute_for_dataset(
         modality_filename=modality_filename,
         data_split=data_split,
         test_split_ratio=test_split_ratio,
+        cmr_clean_catalog_root=(
+            cmr_clean_catalog_root if embodiment == "cmr_versius" else None
+        ),
     )
 
     n = len(ds)
@@ -502,6 +522,14 @@ def main() -> None:
         default=os.environ.get("COSMOS_OPENH_LZ_ROOT"),
         help="optional writable Open-H-lz mirror for selected Draco JHU leaves",
     )
+    parser.add_argument(
+        "--cmr-clean-catalog",
+        default=os.environ.get("COSMOS_OPENH_CMR_CLEAN_CATALOG"),
+        help=(
+            "strict reviewed CMR catalog root (defaults to "
+            "COSMOS_OPENH_CMR_CLEAN_CATALOG); included in stats provenance"
+        ),
+    )
     parser.add_argument("--dataset-path", default=None, help="single dataset path (requires --embodiment)")
     parser.add_argument("--embodiment", default=None, help="embodiment tag for --dataset-path")
     parser.add_argument("--num-frames", type=int, default=13, help="video frames (1 context + N pred); default 13")
@@ -608,6 +636,7 @@ def main() -> None:
         data_split=args.data_split,
         test_split_ratio=args.test_split_ratio,
         write_sidecar=not args.no_sidecar,
+        cmr_clean_catalog_root=args.cmr_clean_catalog,
     )
 
     workers = max(1, int(args.workers))

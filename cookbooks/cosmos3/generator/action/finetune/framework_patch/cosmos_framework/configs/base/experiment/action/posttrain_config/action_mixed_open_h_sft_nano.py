@@ -171,6 +171,11 @@ _HISTORY_ABLATION = os.environ.get("COSMOS_OPENH_HISTORY_ABLATION") or None
 # Arm recipes:  A: neither var;  B: H=16 only;  C: H=16 + memory tracks.
 _CAMP_MEMORY_TRACKS = os.environ.get("COSMOS_OPENH_CAMP_MEMORY_TRACKS") or None
 _MEMORY_ABLATION = os.environ.get("COSMOS_OPENH_MEMORY_ABLATION") or None
+_CMR_CLEAN_CATALOG = os.environ.get("COSMOS_OPENH_CMR_CLEAN_CATALOG") or None
+_CMR_TARGET_SHARE_RAW = os.environ.get("COSMOS_OPENH_CMR_TARGET_SHARE")
+_CMR_TARGET_SHARE = (
+    float(_CMR_TARGET_SHARE_RAW) if _CMR_TARGET_SHARE_RAW else None
+)
 
 
 def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, iterable_shuffle: bool):
@@ -187,6 +192,8 @@ def _openh_dataset(mode: str, *, data_split: str, cfg_dropout_rate: float, itera
         cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
         path_layout="${oc.env:COSMOS_OPENH_PATH_LAYOUT,public}",
         openh_lz_base_path="${oc.env:COSMOS_OPENH_LZ_ROOT,null}",
+        cmr_clean_catalog_root=_CMR_CLEAN_CATALOG,
+        cmr_target_share=_CMR_TARGET_SHARE,
         num_frames=_OPEN_H_NUM_FRAMES,
         data_split=data_split,
         mode=mode,

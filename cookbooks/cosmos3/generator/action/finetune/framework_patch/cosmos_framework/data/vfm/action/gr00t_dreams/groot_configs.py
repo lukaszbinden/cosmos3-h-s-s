@@ -2061,6 +2061,8 @@ def get_open_h_multi_train_specs(
     cmr_base_path: str | None = None,
     path_layout: str | None = None,
     openh_lz_base_path: str | None = None,
+    cmr_clean_catalog_root: str | None = None,
+    cmr_target_share: float | None = None,
 ) -> list[dict]:
     """Open-H multi-embodiment training mixture (CMR + 13 surgical subsets).
 
@@ -2106,28 +2108,56 @@ def get_open_h_multi_train_specs(
                 )
             else:
                 spec["path"] = str(base / draco_relative_path)
-    if not cmr_base_path:
-        return specs
-
     cmr_leaf_names = {
         "cholecystectomy",
         "hysterectomy",
         "inguinal_hernia",
         "prostatectomy",
     }
-    cmr_root = _Path(str(cmr_base_path))
+    cmr_root = _Path(str(cmr_base_path)) if cmr_base_path else None
+    catalog_root = (
+        _Path(str(cmr_clean_catalog_root)) if cmr_clean_catalog_root else None
+    )
+    cmr_specs: list[dict] = []
+    non_cmr_specs: list[dict] = []
     for spec in specs:
         embodiment = spec["embodiment"]
         embodiment_value = embodiment.value if isinstance(embodiment, EmbodimentTag) else str(embodiment)
-        if embodiment_value != EmbodimentTag.CMR_VERSIUS.value:
-            continue
-        procedure = _Path(spec["path"]).name
-        if procedure not in cmr_leaf_names:
+        if embodiment_value == EmbodimentTag.CMR_VERSIUS.value:
+            procedure = _Path(spec["path"]).name
+            if procedure not in cmr_leaf_names:
+                raise ValueError(
+                    f"Unknown CMR procedure leaf {procedure!r}; expected one of "
+                    f"{sorted(cmr_leaf_names)}"
+                )
+            if cmr_root is not None:
+                spec["path"] = str(cmr_root / procedure)
+            if catalog_root is not None:
+                spec["cmr_clean_catalog_root"] = str(catalog_root)
+            cmr_specs.append(spec)
+        else:
+            non_cmr_specs.append(spec)
+
+    if cmr_target_share is not None:
+        target = float(cmr_target_share)
+        if not 0.0 < target < 1.0:
             raise ValueError(
-                f"Unknown CMR procedure leaf {procedure!r}; expected one of "
-                f"{sorted(cmr_leaf_names)}"
+                f"cmr_target_share must be in (0, 1), got {cmr_target_share}"
             )
-        spec["path"] = str(cmr_root / procedure)
+        if catalog_root is None:
+            raise ValueError(
+                "cmr_target_share requires cmr_clean_catalog_root so a requested "
+                "CMR fraction cannot silently use the legacy unreviewed pool"
+            )
+        cmr_sum = sum(float(spec.get("mix_ratio", 1.0)) for spec in cmr_specs)
+        non_cmr_sum = sum(
+            float(spec.get("mix_ratio", 1.0)) for spec in non_cmr_specs
+        )
+        if cmr_sum <= 0.0 or non_cmr_sum <= 0.0:
+            raise ValueError("CMR and non-CMR mix-ratio sums must both be positive")
+        scale = target * non_cmr_sum / ((1.0 - target) * cmr_sum)
+        for spec in cmr_specs:
+            spec["mix_ratio"] = float(spec.get("mix_ratio", 1.0)) * scale
     return specs
 
 

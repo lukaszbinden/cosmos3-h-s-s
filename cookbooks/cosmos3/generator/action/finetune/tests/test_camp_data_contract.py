@@ -292,6 +292,50 @@ class TestContractMatchesDataStack:
             ]
         )
 
+    def test_clean_catalog_scales_nominal_cmr_share_to_30_percent(self):
+        pytest.importorskip("torch")
+        try:
+            from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
+                get_open_h_multi_train_specs,
+            )
+        except ImportError as e:
+            pytest.skip(f"cosmos_framework data stack not importable: {e}")
+
+        specs = get_open_h_multi_train_specs(
+            cmr_clean_catalog_root="/catalog/cmr-clean-v1",
+            cmr_target_share=0.30,
+        )
+        cmr = [
+            spec
+            for spec in specs
+            if spec["embodiment"].value == "cmr_versius"
+        ]
+        non_cmr = [
+            spec
+            for spec in specs
+            if spec["embodiment"].value != "cmr_versius"
+        ]
+        cmr_weight = sum(float(spec["mix_ratio"]) for spec in cmr)
+        non_cmr_weight = sum(float(spec["mix_ratio"]) for spec in non_cmr)
+        assert cmr_weight / (cmr_weight + non_cmr_weight) == pytest.approx(0.30)
+        assert all(
+            spec["cmr_clean_catalog_root"] == "/catalog/cmr-clean-v1"
+            for spec in cmr
+        )
+        assert all("cmr_clean_catalog_root" not in spec for spec in non_cmr)
+
+    def test_cmr_target_share_without_catalog_fails_closed(self):
+        pytest.importorskip("torch")
+        try:
+            from cosmos_framework.data.vfm.action.gr00t_dreams.groot_configs import (
+                get_open_h_multi_train_specs,
+            )
+        except ImportError as e:
+            pytest.skip(f"cosmos_framework data stack not importable: {e}")
+
+        with pytest.raises(ValueError, match="requires cmr_clean_catalog_root"):
+            get_open_h_multi_train_specs(cmr_target_share=0.30)
+
     def test_draco_internal_layout_maps_every_non_cmr_leaf(self):
         """Every EOS-authored leaf must have an explicit Draco counterpart."""
         pytest.importorskip("torch")

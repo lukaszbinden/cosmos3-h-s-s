@@ -29,6 +29,9 @@ from pydantic import BaseModel, ValidationError
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from cosmos_framework.data.vfm.action.gr00t_dreams.data.cmr_clean_catalog import (
+    load_strict_cmr_catalog_steps,
+)
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.embodiment_tags import EmbodimentTag
 from cosmos_framework.data.vfm.action.gr00t_dreams.data.schema import (
     DatasetMetadata,
@@ -388,6 +391,7 @@ class LeRobotSingleDataset(Dataset):
         single_base_index: bool = False,
         modality_filename: str | None = None,
         exclude_splits: list[str] | None = None,
+        cmr_clean_catalog_root: str | None = None,
     ):
         """
         Initialize the dataset.
@@ -408,6 +412,8 @@ class LeRobotSingleDataset(Dataset):
                 then falls back to the standard modality.json.
             exclude_splits (list[str] | None): Split names from info.json to exclude
                 (e.g., ["fail", "bad_frames"]). Episodes in these splits are filtered out.
+            cmr_clean_catalog_root (str | None): Root of a versioned strict CMR
+                clean-window catalog. Candidate/unreviewed catalogs are rejected.
         """
         # first check if the path directory exists
         if not Path(dataset_path).exists():
@@ -420,6 +426,7 @@ class LeRobotSingleDataset(Dataset):
 
         self._dataset_path = Path(dataset_path)
         self._dataset_name = self._dataset_path.name
+        self._cmr_clean_catalog_root = cmr_clean_catalog_root
         _dbg(f"LeRobotSingleDataset.__init__ START leaf={self._dataset_name!r} ({dataset_path})")
 
         # Resolve modality filename: explicit > CMR-specific > default
@@ -1098,6 +1105,26 @@ class LeRobotSingleDataset(Dataset):
         print(
             f"{rank}[CMR Filter] Using action delta indices: {action_delta_indices[:5]}{'...' if len(action_delta_indices) > 5 else ''} (len={len(action_delta_indices)})"
         )
+
+        # The reviewed clean catalog supersedes the legacy clutch cache.  Its
+        # loader is intentionally fail-closed: only strict, semantically
+        # reviewed catalogs with matching data and horizon fingerprints load.
+        if self._cmr_clean_catalog_root is not None:
+            print(
+                f"{rank}[CMR Clean Catalog] Loading strict catalog from: "
+                f"{self._cmr_clean_catalog_root}"
+            )
+            all_steps = load_strict_cmr_catalog_steps(
+                catalog_root=self._cmr_clean_catalog_root,
+                dataset_path=self.dataset_path,
+                action_delta_indices=action_delta_indices,
+            )
+            elapsed_time = time.time() - start_time
+            print(
+                f"{rank}[CMR Clean Catalog] Loaded {len(all_steps):,} "
+                f"reviewed-clean samples in {elapsed_time:.2f}s"
+            )
+            return all_steps
 
         # Generate cache key based on action_delta_indices (primary factor affecting filtering)
         # Include dataset name and split for uniqueness across different dataset configurations
@@ -1798,6 +1825,7 @@ class WrappedLeRobotSingleDataset(LeRobotSingleDataset):
         test_split_ratio: float = 0.05,
         modality_filename: str | None = None,
         exclude_splits: list[str] | None = None,
+        cmr_clean_catalog_root: str | None = None,
         **kwargs,
     ):
         """Wraps ``LeRobotSingleDataset`` with a deterministic train/test split.
@@ -1821,6 +1849,7 @@ class WrappedLeRobotSingleDataset(LeRobotSingleDataset):
             *args,
             modality_filename=modality_filename,
             exclude_splits=exclude_splits,
+            cmr_clean_catalog_root=cmr_clean_catalog_root,
             **kwargs,
         )
 

@@ -352,7 +352,70 @@ production run:
        --dataset-path "$OPENH_SURGICAL_ROOT/cmr_surgical/$proc"
    done
    ```
-5. **Smoke test** (1 node, 10 iters; exercises every dataset + stats files):
+5. **For a semantically clean CMR mixture, build a reviewed catalog.** The
+   legacy clutch cache is not sufficient for this: it retains partially
+   disengaged windows and the CMR release has no native failure/recovery,
+   manual-intervention, or physical tool-exchange annotations.
+
+   First generate conservative telemetry candidates:
+   ```bash
+   CMR_ROOT="${COSMOS_OPENH_CMR_ROOT:-$OPENH_SURGICAL_ROOT/cmr_surgical}"
+   CATALOG_ROOT="$WORKSPACE/catalogs/cmr-clean-candidate-v1"
+   python scripts/build_cmr_clean_catalog.py \
+     --dataset-path "$CMR_ROOT/cholecystectomy" \
+     --dataset-path "$CMR_ROOT/hysterectomy" \
+     --dataset-path "$CMR_ROOT/inguinal_hernia" \
+     --dataset-path "$CMR_ROOT/prostatectomy" \
+     --tier candidate --output "$CATALOG_ROOT"
+   ```
+   Candidate windows require, at **every raw 60 Hz frame** across the full
+   model horizon: both haptics engaged, both selected arms engageable
+   (instrument-change mode is therefore excluded), both clutch buttons
+   released, constant arm mapping, constant instrument types, and finite
+   required telemetry. The resulting `review_queue.jsonl` is deliberately not
+   training-authorized.
+
+   Review/annotate every candidate episode (or clean sub-interval) into JSONL:
+   ```json
+   {"procedure":"cholecystectomy","episode_index":12,"review_status":"verified","outcome":"success","manual_activity":"absent","tool_exchange":"absent","clean_intervals":[[0,1800]],"reviewer":"AB","source":"visual-review-v1"}
+   ```
+   `outcome` is `success|failure|recovery|unknown`; manual/tool fields are
+   `absent|present|unknown`; intervals are half-open raw-frame ranges. Unknown,
+   failure, recovery, manual, and tool-exchange regions contribute no strict
+   windows. Build the training catalog only after review:
+   ```bash
+   python scripts/build_cmr_clean_catalog.py \
+     --dataset-path "$CMR_ROOT/cholecystectomy" \
+     --dataset-path "$CMR_ROOT/hysterectomy" \
+     --dataset-path "$CMR_ROOT/inguinal_hernia" \
+     --dataset-path "$CMR_ROOT/prostatectomy" \
+     --tier strict --review-labels cmr_reviews_v1.jsonl \
+     --output "$WORKSPACE/catalogs/cmr-clean-strict-v1"
+   ```
+   The strict loader verifies the artifact tier, review completeness, horizon,
+   dataset metadata hashes, range-file hashes, and counts. It rejects candidate
+   catalogs and all mismatches.
+
+   Recompute normalization stats under a new postfix so CMR normalization is
+   fit on exactly the reviewed pool; the catalog ID is included in stats
+   provenance:
+   ```bash
+   export COSMOS_OPENH_CMR_CLEAN_CATALOG="$WORKSPACE/catalogs/cmr-clean-strict-v1"
+   export COSMOS_OPENH_STATS_POSTFIX=c3hss-cmr-clean-v1
+   python scripts/compute_openh_action_stats.py \
+     --root "$OPENH_SURGICAL_ROOT" --cmr-root "$CMR_ROOT" \
+     --cmr-clean-catalog "$COSMOS_OPENH_CMR_CLEAN_CATALOG" \
+     --postfix "$COSMOS_OPENH_STATS_POSTFIX" \
+     --experiment-id c3hss_cmr_clean_v1
+   ```
+
+   To request **30% CMR**, drawn exclusively from the strict catalog:
+   ```bash
+   export COSMOS_OPENH_CMR_TARGET_SHARE=0.30
+   ```
+   The other 70% keeps the existing non-CMR relative weights. Setting a CMR
+   target share without a strict catalog is a hard error.
+6. **Smoke test** (1 node, 10 iters; exercises every dataset + stats files):
    ```bash
    sbatch scripts/slurm_smoke.sbatch
    ```

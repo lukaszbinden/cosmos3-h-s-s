@@ -83,6 +83,12 @@ if any(_os.environ.get(v) for v in _CAMP_ENV_VARS) and not _MIXED_REGISTRY_IMPOR
         "Launch CAMP arms via action_mixed_open_h_sft_nano."
     )
 
+_CMR_CLEAN_CATALOG = _os.environ.get("COSMOS_OPENH_CMR_CLEAN_CATALOG") or None
+_CMR_TARGET_SHARE_RAW = _os.environ.get("COSMOS_OPENH_CMR_TARGET_SHARE")
+_CMR_TARGET_SHARE = (
+    float(_CMR_TARGET_SHARE_RAW) if _CMR_TARGET_SHARE_RAW else None
+)
+
 cs = ConfigStore.instance()
 
 
@@ -323,6 +329,8 @@ action_fdm_open_h_sft_nano = LazyDict(
                             cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
                             path_layout="${oc.env:COSMOS_OPENH_PATH_LAYOUT,public}",
                             openh_lz_base_path="${oc.env:COSMOS_OPENH_LZ_ROOT,null}",
+                            cmr_clean_catalog_root=_CMR_CLEAN_CATALOG,
+                            cmr_target_share=_CMR_TARGET_SHARE,
                             num_frames=_OPEN_H_NUM_FRAMES,
                             data_split="train",
                             mode="forward_dynamics",
@@ -389,6 +397,8 @@ action_fdm_open_h_sft_nano = LazyDict(
                             cmr_base_path="${oc.env:COSMOS_OPENH_CMR_ROOT,null}",
                             path_layout="${oc.env:COSMOS_OPENH_PATH_LAYOUT,public}",
                             openh_lz_base_path="${oc.env:COSMOS_OPENH_LZ_ROOT,null}",
+                            cmr_clean_catalog_root=_CMR_CLEAN_CATALOG,
+                            cmr_target_share=_CMR_TARGET_SHARE,
                             num_frames=_OPEN_H_NUM_FRAMES,
                             data_split="test",  # held-out 0.02 split (vs train above)
                             mode="forward_dynamics",

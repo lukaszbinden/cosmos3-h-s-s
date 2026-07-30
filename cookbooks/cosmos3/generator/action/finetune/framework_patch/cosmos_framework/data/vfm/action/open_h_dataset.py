@@ -269,6 +269,7 @@ class OpenHMixedLeRobotDataset(Dataset):
             spec_data_split = spec.get("data_split_override", data_split)
             spec_test_split_ratio = spec.get("test_split_ratio_override", test_split_ratio)
             exclude_splits = spec.get("exclude_splits", None)
+            cmr_clean_catalog_root = spec.get("cmr_clean_catalog_root", None)
 
             log.info(
                 f"[{i}] {embodiment} mix_ratio={mix_ratio:.3f} "
@@ -319,6 +320,7 @@ class OpenHMixedLeRobotDataset(Dataset):
                 test_split_ratio=spec_test_split_ratio,
                 modality_filename=modality_filename,
                 exclude_splits=exclude_splits,
+                cmr_clean_catalog_root=cmr_clean_catalog_root,
             )
 
             self.sub_datasets.append(sub)
