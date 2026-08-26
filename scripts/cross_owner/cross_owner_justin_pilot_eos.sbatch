@@ -44,6 +44,7 @@ srun --container-image="$CONTAINER" --container-mounts="$MOUNTS" --container-wor
 e9e81810e21678c261ea2683c07031c1611f85d1a07a9ae36c06a7e982fe8f5f  $CFG
 9905b186a23e5e293c5aaf8225c424ceb11b4ef8e47527f5626a29c6a276a0c2  /workspace/scripts/long_horizon_fds.py
 eb80dc029a75ce45508f02626339ecfbfcc7ec63f06cc385069ab2cedd54880e  /workspace/scripts/fds_metrics.py
+a2cc413b98371d2bc887bdf130bfecf52b9570f75a24ec248f2c7ab3ed3a20e0  /ckpt/model/.metadata
 EOF
     source /workspace/.venv/bin/activate
     export LD_LIBRARY_PATH= HF_HOME=/root/.cache/huggingface WANDB_MODE=offline

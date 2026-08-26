@@ -44,6 +44,7 @@ srun --container-image="$CONTAINER" --container-mounts="$MOUNTS" --container-wor
 8cbd6b55469b0ecd735a085979b6068161cb81bf701f46c931bbe6182691134c  $TOML
 f9bafa9845383419de64673286e3a2bd93504dd22b44147ceb1115cb391fea58  $J/scripts/lzb_long_horizon_fds.py
 eb80dc029a75ce45508f02626339ecfbfcc7ec63f06cc385069ab2cedd54880e  $J/scripts/fds_metrics.py
+57c66852a462af11d3e76bfffdc38a47599254c63dfcd2f10f6b031f0eb12ef2  $CKPT/model/.metadata
 EOF
     source "$LPKG/.venv/bin/activate"
     export LD_LIBRARY_PATH= PYTHONDONTWRITEBYTECODE=1 WANDB_MODE=offline

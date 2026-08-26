@@ -38,8 +38,8 @@ srun --container-image="$CONTAINER" --container-mounts="$MOUNTS" --container-wor
 e9e81810e21678c261ea2683c07031c1611f85d1a07a9ae36c06a7e982fe8f5f  $JX/_configs/ours_14280.yaml
 021a860819714772d1a73c4dbbd6151fd4746f98cf2591494881446c0259e4c3  $J/scripts/build_episode_targets.py
 7f2ab57fa900ba17df6268b5fcdb0baf836176ea63fa3f3f97e1873cf105dc46  $MANIFEST
-a2cc413b98371d2bc887bdf130bfecf52b9570f75a24ec248f2c7ab3ed3a20e0  $JCKPT/.metadata
-57c66852a462af11d3e76bfffdc38a47599254c63dfcd2f10f6b031f0eb12ef2  $LCKPT/.metadata
+a2cc413b98371d2bc887bdf130bfecf52b9570f75a24ec248f2c7ab3ed3a20e0  $JCKPT/model/.metadata
+57c66852a462af11d3e76bfffdc38a47599254c63dfcd2f10f6b031f0eb12ef2  $LCKPT/model/.metadata
 d0b86e3ffa7348ff9a9331e7f2402e9a37f9142296d2be04adc2f4babbf5de20  /lustre/fsw/healthcareeng_holoscan/user_data/justchen/outputs/exp_cmr_clinical_train/cosmos3_surgical/action_exp232_mix/action_exp232_mix_v3_latentcache256/config.yaml
 a5f3764164829adac07ca8677df20f48611f652baa73d6c6441c173a29c17a64  /lustre/fsw/healthcareeng_holoscan/user_data/lzbinden/imaginaire/output/cosmos3_action_surgical/action_open_h/mm-C3-H-S-S-base/config.yaml
 EOF
