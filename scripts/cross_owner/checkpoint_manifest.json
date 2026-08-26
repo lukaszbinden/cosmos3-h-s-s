@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-08-26T00:00:00Z",
+  "comparison": "EOS Lukas C3-H-S-S versus Justin Cosmos3 Surgical",
+  "checkpoints": {
+    "lukas_26500": {
+      "owner": "lzbinden",
+      "path": "/lustre/fsw/healthcareeng_holoscan/user_data/lzbinden/imaginaire/output/cosmos3_action_surgical/action_open_h/mm-C3-H-S-S-base/checkpoints/iter_000026500",
+      "iteration": 26500,
+      "metadata_sha256": "57c66852a462af11d3e76bfffdc38a47599254c63dfcd2f10f6b031f0eb12ef2",
+      "checkpoint_bytes": 119129169493,
+      "training_config": "/lustre/fsw/healthcareeng_holoscan/user_data/lzbinden/imaginaire/output/cosmos3_action_surgical/action_open_h/mm-C3-H-S-S-base/config.yaml",
+      "training_config_sha256": "a5f3764164829adac07ca8677df20f48611f652baa73d6c6441c173a29c17a64",
+      "native_frames": 13,
+      "native_action_dim": 44,
+      "native_resolution": 480
+    },
+    "justin_14280": {
+      "owner": "justchen",
+      "path": "/lustre/fsw/healthcareeng_holoscan/user_data/justchen/outputs/exp_cmr_clinical_train/cosmos3_surgical/action_exp232_mix/action_exp232_mix_v3_latentcache256/checkpoints/iter_000014280",
+      "iteration": 14280,
+      "metadata_sha256": "a2cc413b98371d2bc887bdf130bfecf52b9570f75a24ec248f2c7ab3ed3a20e0",
+      "checkpoint_bytes": 147042375513,
+      "training_config": "/lustre/fsw/healthcareeng_holoscan/user_data/justchen/outputs/exp_cmr_clinical_train/cosmos3_surgical/action_exp232_mix/action_exp232_mix_v3_latentcache256/config.yaml",
+      "training_config_sha256": "d0b86e3ffa7348ff9a9331e7f2402e9a37f9142296d2be04adc2f4babbf5de20",
+      "eval_config": "/lustre/fsw/healthcareeng_holoscan/user_data/justchen/outputs/crossckpt_eval/_configs/ours_14280.yaml",
+      "eval_config_sha256": "e9e81810e21678c261ea2683c07031c1611f85d1a07a9ae36c06a7e982fe8f5f",
+      "native_frames": 24,
+      "native_action_dim": 64,
+      "native_resolution": 256
+    }
+  },
+  "evaluator_workspaces": {
+    "lukas": {
+      "path": "/lustre/fsw/healthcareeng_holoscan/user_data/lzbinden/git/cosmos3-h-s-s",
+      "git_sha": "41cf5e1b1534b5fe7a070ff692613e0434fab442"
+    },
+    "justin": {
+      "path": "/lustre/fsw/healthcareeng_holoscan/user_data/justchen/projects/cosmos3-internal",
+      "git_sha": "52e46684867cfa104962742218c64bc13d773c59"
+    }
+  },
+  "pinned_inputs": {
+    "justin_eval_config_sha256": "e9e81810e21678c261ea2683c07031c1611f85d1a07a9ae36c06a7e982fe8f5f",
+    "build_episode_targets_sha256": "021a860819714772d1a73c4dbbd6151fd4746f98cf2591494881446c0259e4c3",
+    "build_lzb_start_offsets_sha256": "335d04bedca87f350b54c120d8271c868b04ec7e13d0d51bc167af05d42be3cd",
+    "justin_long_horizon_fds_sha256": "9905b186a23e5e293c5aaf8225c424ceb11b4ef8e47527f5626a29c6a276a0c2",
+    "lukas_long_horizon_fds_sha256": "f9bafa9845383419de64673286e3a2bd93504dd22b44147ceb1115cb391fea58",
+    "fds_metrics_sha256": "eb80dc029a75ce45508f02626339ecfbfcc7ec63f06cc385069ab2cedd54880e",
+    "lukas_sft_toml_sha256": "8cbd6b55469b0ecd735a085979b6068161cb81bf701f46c931bbe6182691134c"
+  }
+}
