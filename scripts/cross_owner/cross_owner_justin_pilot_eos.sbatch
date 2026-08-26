@@ -37,7 +37,7 @@ export COSMOS_EPISODE_ROOT_ALIASES="{\"$JH/datasets/openh_v30\":\"OPENH\",\"$OPE
 export DATASET_ROOT=$JH/datasets/cmr_clinical_v30
 export OPENH_ROOT=$JH/datasets/openh_v30
 export JHU_SUTUREBOT_ROOT=/lustre/fsw/healthcareeng_holoscan/datasets/JHU_suturebot_v30
-MOUNTS="$J:$J,$J:/workspace,$OUT:$OUT,$OPENH:$OPENH:ro,$JH/datasets:$JH/datasets:ro,$CKPT:/ckpt:ro,$JH/.cache:/root/.cache,$JH/.local/share/uv:$JH/.local/share/uv"
+MOUNTS="$J:$J,$J:/workspace,$OUT:$OUT,$JX/_configs:$JX/_configs:ro,$OPENH:$OPENH:ro,$JH/datasets:$JH/datasets:ro,$CKPT:/ckpt:ro,$JH/.cache:/root/.cache,$JH/.local/share/uv:$JH/.local/share/uv"
 
 srun --container-image="$CONTAINER" --container-mounts="$MOUNTS" --container-workdir=/workspace \
   --export=ALL,CFG="$CFG",FAMILY="$FAMILY",SPLIT="$SPLIT",TARGET="$TARGET",DEST="$DEST",COSMOS_EPISODE_ROOT_ALIASES \
