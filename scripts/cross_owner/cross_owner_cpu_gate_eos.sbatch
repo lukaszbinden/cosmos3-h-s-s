@@ -45,6 +45,9 @@ a5f3764164829adac07ca8677df20f48611f652baa73d6c6441c173a29c17a64  /lustre/fsw/he
 EOF
     source "$J/.venv/bin/activate"
     export LD_LIBRARY_PATH= PYTHONPATH="$J" COSMOS_TRAINING=1
+    export DATASET_ROOT=/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/cmr_clinical_v30
+    export OPENH_ROOT=/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/openh_v30
+    export JHU_SUTUREBOT_ROOT=/lustre/fsw/healthcareeng_holoscan/datasets/JHU_suturebot_v30
     export COSMOS_EPISODE_ROOT_ALIASES="{\"/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/openh_v30\":\"OPENH\",\"$OPENH\":\"OPENH\",\"$OPENH/cmr_surgical\":\"CMR\",\"/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/cmr_clinical_v30\":\"CMR\"}"
     python "$J/scripts/build_episode_targets.py" dump \
       --config-file "$JX/_configs/ours_14280.yaml" --label justin_val \
@@ -56,6 +59,7 @@ EOF
 
     source "$L/packages/cosmos3/.venv/bin/activate"
     export LD_LIBRARY_PATH= PYTHONDONTWRITEBYTECODE=1
+    export COSMOS_OPENH_STATS_POSTFIX=c3hss-v1
     export PYTHONPATH="$L/packages/cosmos3:$L/cookbooks/cosmos3/generator/action/finetune/scripts"
     python "$OURS/scripts/cross_owner/dump_lukas_spans.py" \
       --manifest "$MANIFEST" --label lukas_train --output "$OUT/_spans/lukas_train.json" \
@@ -67,6 +71,9 @@ EOF
 
     source "$J/.venv/bin/activate"
     export LD_LIBRARY_PATH= PYTHONPATH="$J" COSMOS_TRAINING=1
+    export DATASET_ROOT=/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/cmr_clinical_v30
+    export OPENH_ROOT=/lustre/fsw/healthcareeng_holoscan/user_data/justchen/datasets/openh_v30
+    export JHU_SUTUREBOT_ROOT=/lustre/fsw/healthcareeng_holoscan/datasets/JHU_suturebot_v30
     python "$J/scripts/build_episode_targets.py" intersect \
       --spans "$OUT/_spans/justin_val.json" --spans "$OUT/_spans/lukas_train.json" \
       --episodes-per-family 1 --output-dir "$OUT/targets/justin_heldout"
